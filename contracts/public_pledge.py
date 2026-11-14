@@ -104,10 +104,9 @@ def _judge_with_validators(
 
     def leader_fn() -> dict:
         res = gl.nondet.web.get(evidence_url)
-        if res.status_code >= 400:
-            raise gl.vm.UserError(
-                f"{EXTERNAL} evidence returned HTTP {res.status_code}"
-            )
+        # The SDK's response object exposes `.status` (not `.status_code`).
+        if res.status >= 400:
+            raise gl.vm.UserError(f"{EXTERNAL} evidence returned HTTP {res.status}")
         body = res.body.decode("utf-8", errors="replace")[:MAX_EVIDENCE_CHARS]
 
         prompt = f"""You are an impartial judge for a public pledge. Decide whether the pledge was kept, using ONLY the evidence below.
