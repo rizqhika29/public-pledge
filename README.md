@@ -6,7 +6,7 @@ Komitmen publik yang dipertaruhkan di GenLayer. Seseorang menulis janji dalam ba
 - Janji dilanggar: stake bisa diklaim oleh beneficiary yang dipilih pemilik sejak awal.
 - Bukti tidak bisa dibaca atau ambigu: pledge tetap aktif, dan setelah masa tunggu pemilik bisa menarik stake kembali.
 
-Status saat ini: **kontrak + test direct-mode (CI hijau) + frontend Next.js**. Job CI frontend (build dan typecheck) sudah ditulis tetapi belum pernah dijalankan, dan frontend belum dicoba di browser.
+Status saat ini: **kontrak + test direct-mode + frontend Next.js**. CI hijau untuk lint kontrak, 39 test direct-mode, dan build serta typecheck frontend. Belum teruji: frontend di browser dengan wallet, dan alur penuh di Studio (konsensus validator sungguhan, `withdraw`).
 
 ## Alur
 
@@ -75,13 +75,13 @@ Catatan desain:
 - **Jaringan.** Studionet dan Localnet. Bradbury butuh SDK v2 dan sengaja tidak ditawarkan.
 - **Fee.** SDK 1.1.8 tidak punya estimasi fee (itu API v2), jadi frontend belum mengirim `fees`. Itu tugas migrasi ke v2 untuk jaringan yang memungut fee.
 
-## Yang perlu diverifikasi di mesin Anda
+## Yang belum teruji
 
-Kode dan test ditulis tanpa bisa menjalankan lint maupun pytest. Titik yang paling mungkin perlu penyesuaian:
+CI sudah menjalankan lint, test direct-mode (web dan LLM di-mock), serta build dan typecheck frontend. Yang tersisa adalah perilaku di jaringan sungguhan:
 
-- **`tests/direct/test_validator.py`** bergantung pada `direct_vm.run_validator()` yang menangkap closure validator dari `run_nondet_unsafe`. Dokumentasi runner hanya menyebut `run_nondet`. Kalau versi `genlayer-test` Anda belum menangkapnya, jalankan test ini lewat GLSim atau Studio.
+- **Konsensus validator dan LLM sungguhan.** Test hanya membuktikan logika kontrak. Cara validator nyata menilai bukti baru terlihat saat `judge` dijalankan di Studio.
 - **`withdraw` yang berhasil** mengirim pesan eksternal (`emit_transfer`). Direct mode tidak diketahui mendukungnya, jadi hanya guard "nothing to withdraw" yang dites di sana. Uji transfer sungguhan di Studio atau GLSim.
-- **Format error.** Helper `expect_error` memeriksa `.message` dan `str(e)` agar tidak bergantung pada cara SDK memformat `UserError`.
+- **Frontend di browser.** Alur wallet, switch jaringan, dan dialog transaksi belum pernah dicoba dengan wallet sungguhan.
 
 ## Struktur
 
@@ -95,7 +95,6 @@ requirements.txt                    dependency Python (versi mengikuti boilerpla
 
 ## Berikutnya
 
-1. Jalankan lint dan test di mesin Anda, lalu perbaiki apa pun yang gagal.
-2. Deploy ke Studio dan uji satu pledge dari awal sampai `withdraw`.
-3. Tambahkan test integrasi (`gltest`) untuk alur penuh di GLSim.
-4. Bangun frontend Next.js dengan GenLayerJS. Siapkan estimasi fee sebelum menulis (`estimateTransactionFeesForWrite`) untuk `create_pledge` (payable, `value` + fee), `judge`, `refund_expired`, dan `withdraw`.
+1. Deploy ke Studio, isi `NEXT_PUBLIC_CONTRACT_ADDRESS`, dan uji satu pledge dari awal sampai `withdraw` lewat frontend.
+2. Tambahkan test integrasi (`gltest`) untuk alur penuh di GLSim.
+3. Migrasi ke `genlayer-js` v2 untuk Testnet Bradbury, termasuk estimasi fee sebelum menulis (`estimateTransactionFeesForWrite`) untuk `create_pledge` (payable, `value` + fee), `judge`, `refund_expired`, dan `withdraw`.
