@@ -31,3 +31,20 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - run: pytest tests/direct/ -v
+
+
+  frontend:
+    name: Frontend (typecheck and build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      # Build first: `next build` generates the route types that `tsc` reads.
+      - run: npm run build
+      - run: npm run typecheck

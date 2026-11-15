@@ -6,7 +6,7 @@ Komitmen publik yang dipertaruhkan di GenLayer. Seseorang menulis janji dalam ba
 - Janji dilanggar: stake bisa diklaim oleh beneficiary yang dipilih pemilik sejak awal.
 - Bukti tidak bisa dibaca atau ambigu: pledge tetap aktif, dan setelah masa tunggu pemilik bisa menarik stake kembali.
 
-Status saat ini: **kontrak + test direct-mode**. Frontend Next.js menyusul.
+Status saat ini: **kontrak + test direct-mode (CI hijau) + frontend Next.js**. Job CI frontend (build dan typecheck) sudah ditulis tetapi belum pernah dijalankan, dan frontend belum dicoba di browser.
 
 ## Alur
 
@@ -53,6 +53,27 @@ pytest tests/direct/ -v                       # test cepat di memori, tanpa jari
 ```
 
 Mencoba di Studio: buka studio.genlayer.com, muat `contracts/public_pledge.py`, deploy tanpa argumen konstruktor, dan isi saldo akun dari faucet bawaan.
+
+## Frontend
+
+Next.js 16 + Tailwind 4 + `genlayer-js` 1.1.8 (dipin), di folder `frontend/`.
+
+```bash
+cd frontend
+cp .env.example .env.local     # isi NEXT_PUBLIC_CONTRACT_ADDRESS setelah deploy kontrak
+npm install
+npm run dev
+```
+
+Halaman: landing (`/`), cara kerja (`/how-it-works`), daftar pledge (`/pledges`), detail dan hasil konsensus (`/pledges/[id]`), buat pledge (`/create`), akun dan withdraw (`/account`).
+
+Catatan desain:
+
+- **Wallet tanpa rebutan pop-up.** Wallet ditemukan lewat EIP-6963 dan pengguna memilih satu. Semua permintaan hanya dikirim ke provider wallet itu, bukan ke `window.ethereum`. Hanya satu permintaan wallet yang boleh terbuka pada satu waktu. Pembacaan data tidak pernah membuka wallet.
+- **Data konsensus AI.** Verdict, alasan, dan jumlah pengecekan dibaca dari view `get_pledge` / `get_pledges`, lalu ditampilkan di halaman detail dan setelah `judge`.
+- **Status transaksi.** Alur "konfirmasi wallet" lalu "validator mencapai konsensus", dengan notifikasi sukses dan error. `ACCEPTED` tidak dianggap sukses kalau eksekusi kontrak berakhir error.
+- **Jaringan.** Studionet dan Localnet. Bradbury butuh SDK v2 dan sengaja tidak ditawarkan.
+- **Fee.** SDK 1.1.8 tidak punya estimasi fee (itu API v2), jadi frontend belum mengirim `fees`. Itu tugas migrasi ke v2 untuk jaringan yang memungut fee.
 
 ## Yang perlu diverifikasi di mesin Anda
 

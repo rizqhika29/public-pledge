@@ -15,7 +15,7 @@ __pycache__/
 .pytest_cache/
 .venv/
 
-# Node / Next.js (frontend comes later)
+# Node / Next.js
 node_modules
 /frontend/.next
 /frontend/next-env.d.ts
