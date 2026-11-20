@@ -12,6 +12,9 @@ In CI:
 
 The account must hold a little GEN on Studionet, because `create_pledge` sends
 the stake as transaction value.
+
+API used (gltest 0.29): reads are `contract.method(args=[...]).call()` and
+writes are `contract.method(args=[...]).transact(value=..., **wait_kwargs)`.
 """
 
 import time
@@ -24,7 +27,7 @@ from gltest.assertions import tx_execution_succeeded
 # gltest resolves contract paths relative to the `contracts/` directory.
 CONTRACT_PATH = "public_pledge.py"
 
-# A public, stable page. Pinned content policy: it must keep mentioning GenLayer.
+# A public, stable page. It must keep mentioning GenLayer for the criteria below.
 DOCS_URL = "https://docs.genlayer.com/llms.txt"
 # Guaranteed 404, used to prove evidence failures block settlement.
 MISSING_URL = "https://docs.genlayer.com/this-page-does-not-exist-9f2c"
@@ -48,19 +51,29 @@ def _wait_until(unix_seconds: int) -> None:
         time.sleep(delay)
 
 
+def _read(contract, method: str, args: list):
+    """Read a view method: contract.<method>(args=...).call()."""
+    return getattr(contract, method)(args=args).call()
+
+
+def _write(contract, method: str, args: list, value: int = 0):
+    """Send a write through consensus and return its receipt."""
+    return getattr(contract, method)(args=args).transact(value=value, **SLOW)
+
+
 @pytest.fixture(scope="module")
 def contract():
     """Deploy once; every test creates its own pledge against it."""
     factory = get_contract_factory(contract_file_path=CONTRACT_PATH)
     deployed = factory.deploy(args=[])
     print(f"\nPublicPledge deployed at {deployed.address}")
-    assert deployed.get_pledge_count.call(args=[]) == 0
+    assert int(_read(deployed, "get_pledge_count", [])) == 0
     return deployed
 
 
 @pytest.fixture(scope="module")
 def beneficiary():
-    """A second, distinct address. Never funded: it only receives claimables."""
+    """A second, distinct address. It only ever receives claimables."""
     return create_accounts(1)[0].address
 
 
@@ -69,13 +82,14 @@ def _create(contract, beneficiary, *, deadline, url=DOCS_URL, stake=STAKE, **ove
     criteria = overrides.pop(
         "criteria", "The page is readable and its content mentions GenLayer."
     )
-    before = contract.get_pledge_count.call(args=[])
-    receipt = contract.create_pledge.transact(
-        args=[promise, url, criteria, beneficiary, deadline],
+    before = int(_read(contract, "get_pledge_count", []))
+    receipt = _write(
+        contract,
+        "create_pledge",
+        [promise, url, criteria, beneficiary, deadline],
         value=stake,
-        **SLOW,
     )
-    return receipt, int(before)
+    return receipt, before
 
 
 # ---------------------------------------------------------------------------
@@ -85,11 +99,11 @@ def _create(contract, beneficiary, *, deadline, url=DOCS_URL, stake=STAKE, **ove
 
 @pytest.mark.integration
 def test_deployed_contract_exposes_views(contract):
-    config = contract.get_config.call(args=[])
+    config = _read(contract, "get_config", [])
     assert int(config["grace_seconds"]) == 7 * 24 * 3600
     assert int(config["max_page_size"]) == 50
 
-    page = contract.get_pledges.call(args=[0, 10])
+    page = _read(contract, "get_pledges", [0, 10])
     assert int(page["total"]) >= 0
     assert isinstance(page["items"], list)
 
@@ -100,7 +114,7 @@ def test_create_pledge_persists_state(contract, beneficiary):
     receipt, pid = _create(contract, beneficiary, deadline=deadline)
     assert tx_execution_succeeded(receipt)
 
-    pledge = contract.get_pledge.call(args=[pid])
+    pledge = _read(contract, "get_pledge", [pid])
     owner = get_default_account().address
     assert pledge["owner"].lower() == owner.lower()
     assert pledge["beneficiary"].lower() == beneficiary.lower()
@@ -116,42 +130,15 @@ def test_create_pledge_persists_state(contract, beneficiary):
 # ---------------------------------------------------------------------------
 
 BAD_INPUTS = [
-    pytest.param(
-        {"stake": 0},
-        id="zero-stake",
-    ),
-    pytest.param(
-        {"beneficiary": "SELF"},
-        id="beneficiary-is-owner",
-    ),
-    pytest.param(
-        {"beneficiary": ZERO_ADDRESS},
-        id="beneficiary-is-zero-address",
-    ),
-    pytest.param(
-        {"url": "http://docs.genlayer.com/llms.txt"},
-        id="non-https-evidence",
-    ),
-    pytest.param(
-        {"url": "https://docs.genlayer.com/" + "a" * 400},
-        id="overlong-url",
-    ),
-    pytest.param(
-        {"deadline_offset": -60},
-        id="deadline-in-the-past",
-    ),
-    pytest.param(
-        {"deadline_offset": 400 * 24 * 3600},
-        id="deadline-beyond-horizon",
-    ),
-    pytest.param(
-        {"promise": "   "},
-        id="blank-promise",
-    ),
-    pytest.param(
-        {"criteria": "x" * 600},
-        id="overlong-criteria",
-    ),
+    pytest.param({"stake": 0}, id="zero-stake"),
+    pytest.param({"beneficiary": "SELF"}, id="beneficiary-is-owner"),
+    pytest.param({"beneficiary": ZERO_ADDRESS}, id="beneficiary-is-zero-address"),
+    pytest.param({"url": "http://docs.genlayer.com/llms.txt"}, id="non-https-evidence"),
+    pytest.param({"url": "https://docs.genlayer.com/" + "a" * 400}, id="overlong-url"),
+    pytest.param({"deadline_offset": -60}, id="deadline-in-the-past"),
+    pytest.param({"deadline_offset": 400 * 24 * 3600}, id="deadline-beyond-horizon"),
+    pytest.param({"promise": "   "}, id="blank-promise"),
+    pytest.param({"criteria": "x" * 600}, id="overlong-criteria"),
 ]
 
 
@@ -163,11 +150,16 @@ def test_invalid_pledge_is_rejected(contract, beneficiary, bad):
     stake = bad.get("stake", STAKE)
     url = bad.get("url", DOCS_URL)
     deadline = _now() + bad.get("deadline_offset", 3600)
-    target = owner if bad.get("beneficiary") == "SELF" else bad.get("beneficiary", beneficiary)
+    if bad.get("beneficiary") == "SELF":
+        target = owner
+    else:
+        target = bad.get("beneficiary", beneficiary)
 
-    before = int(contract.get_pledge_count.call(args=[]))
-    receipt = contract.create_pledge.transact(
-        args=[
+    before = int(_read(contract, "get_pledge_count", []))
+    receipt = _write(
+        contract,
+        "create_pledge",
+        [
             bad.get("promise", "A promise"),
             url,
             bad.get("criteria", "Some criteria"),
@@ -175,13 +167,12 @@ def test_invalid_pledge_is_rejected(contract, beneficiary, bad):
             deadline,
         ],
         value=stake,
-        **SLOW,
     )
 
     assert not tx_execution_succeeded(receipt), (
         f"the contract accepted an invalid pledge: {bad}"
     )
-    assert int(contract.get_pledge_count.call(args=[])) == before, (
+    assert int(_read(contract, "get_pledge_count", [])) == before, (
         "an invalid pledge was stored"
     )
 
@@ -191,9 +182,9 @@ def test_judge_before_deadline_is_rejected(contract, beneficiary):
     receipt, pid = _create(contract, beneficiary, deadline=_now() + 3600)
     assert tx_execution_succeeded(receipt)
 
-    judged = contract.judge.transact(args=[pid], **SLOW)
+    judged = _write(contract, "judge", [pid])
     assert not tx_execution_succeeded(judged)
-    assert contract.get_pledge.call(args=[pid])["status"] == "active"
+    assert _read(contract, "get_pledge", [pid])["status"] == "active"
 
 
 @pytest.mark.integration
@@ -201,25 +192,24 @@ def test_refund_before_grace_is_rejected(contract, beneficiary):
     receipt, pid = _create(contract, beneficiary, deadline=_now() + 3600)
     assert tx_execution_succeeded(receipt)
 
-    refunded = contract.refund_expired.transact(args=[pid], **SLOW)
+    refunded = _write(contract, "refund_expired", [pid])
     assert not tx_execution_succeeded(refunded)
-    assert contract.get_pledge.call(args=[pid])["status"] == "active"
+    assert _read(contract, "get_pledge", [pid])["status"] == "active"
 
 
 @pytest.mark.integration
 def test_unknown_pledge_id_is_rejected(contract):
-    assert not tx_execution_succeeded(contract.judge.transact(args=[999_999], **SLOW))
+    assert not tx_execution_succeeded(_write(contract, "judge", [999_999]))
 
 
 @pytest.mark.integration
 def test_withdraw_with_empty_balance_is_rejected(contract):
     """An unrelated account has nothing claimable and must not be able to withdraw."""
-    factory = get_contract_factory(contract_file_path=CONTRACT_PATH)
     stranger = create_accounts(1)[0]
-    as_stranger = factory.build_contract(contract.address, account=stranger)
+    as_stranger = contract.connect(stranger)
 
-    assert int(as_stranger.get_claimable.call(args=[stranger.address])) == 0
-    assert not tx_execution_succeeded(as_stranger.withdraw.transact(args=[], **SLOW))
+    assert int(_read(as_stranger, "get_claimable", [stranger.address])) == 0
+    assert not tx_execution_succeeded(_write(as_stranger, "withdraw", []))
 
 
 # ---------------------------------------------------------------------------
@@ -235,22 +225,22 @@ def test_promise_kept_settles_and_pays_out(contract, beneficiary):
     receipt, pid = _create(contract, beneficiary, deadline=deadline)
     assert tx_execution_succeeded(receipt)
 
-    claimable_before = int(contract.get_claimable.call(args=[owner]))
+    claimable_before = int(_read(contract, "get_claimable", [owner]))
     _wait_until(deadline)
 
-    judged = contract.judge.transact(args=[pid], **SLOW)
+    judged = _write(contract, "judge", [pid])
     assert tx_execution_succeeded(judged), "validators did not settle a keepable pledge"
 
-    pledge = contract.get_pledge.call(args=[pid])
+    pledge = _read(contract, "get_pledge", [pid])
     print(f"verdict={pledge['status']} note={pledge['note']!r}")
     assert pledge["status"] == "kept"
     assert int(pledge["checks"]) >= 1
-    assert int(contract.get_claimable.call(args=[owner])) == claimable_before + STAKE
-    assert int(contract.get_record.call(args=[owner])["kept"]) >= 1
+    assert int(_read(contract, "get_claimable", [owner])) == claimable_before + STAKE
+    assert int(_read(contract, "get_record", [owner])["kept"]) >= 1
 
     # The pull payment must actually transfer value out of the contract.
-    assert tx_execution_succeeded(contract.withdraw.transact(args=[], **SLOW))
-    assert int(contract.get_claimable.call(args=[owner])) == 0
+    assert tx_execution_succeeded(_write(contract, "withdraw", []))
+    assert int(_read(contract, "get_claimable", [owner])) == 0
 
 
 @pytest.mark.integration
@@ -266,16 +256,15 @@ def test_unmet_criteria_never_pays_the_owner(contract, beneficiary):
     )
     assert tx_execution_succeeded(receipt)
 
-    claimable_before = int(contract.get_claimable.call(args=[owner]))
+    claimable_before = int(_read(contract, "get_claimable", [owner]))
     _wait_until(deadline)
 
-    judged = contract.judge.transact(args=[pid], **SLOW)
-    assert tx_execution_succeeded(judged)
+    assert tx_execution_succeeded(_write(contract, "judge", [pid]))
 
-    pledge = contract.get_pledge.call(args=[pid])
+    pledge = _read(contract, "get_pledge", [pid])
     print(f"verdict={pledge['status']} note={pledge['note']!r}")
     assert pledge["status"] != "kept", "unsatisfiable criteria were judged as kept"
-    assert int(contract.get_claimable.call(args=[owner])) == claimable_before
+    assert int(_read(contract, "get_claimable", [owner])) == claimable_before
 
 
 @pytest.mark.integration
@@ -286,16 +275,16 @@ def test_unreachable_evidence_settles_nothing(contract, beneficiary):
     receipt, pid = _create(contract, beneficiary, deadline=deadline, url=MISSING_URL)
     assert tx_execution_succeeded(receipt)
 
-    claimable_before = int(contract.get_claimable.call(args=[owner]))
+    claimable_before = int(_read(contract, "get_claimable", [owner]))
     _wait_until(deadline)
 
-    judged = contract.judge.transact(args=[pid], **SLOW)
+    judged = _write(contract, "judge", [pid])
     assert not tx_execution_succeeded(judged), "judgement succeeded on a 404 page"
 
-    pledge = contract.get_pledge.call(args=[pid])
+    pledge = _read(contract, "get_pledge", [pid])
     assert pledge["status"] == "active"
     assert int(pledge["checks"]) == 0
-    assert int(contract.get_claimable.call(args=[owner])) == claimable_before
+    assert int(_read(contract, "get_claimable", [owner])) == claimable_before
 
 
 @pytest.mark.integration
@@ -307,8 +296,8 @@ def test_already_settled_pledge_cannot_be_judged_again(contract, beneficiary):
     assert tx_execution_succeeded(receipt)
 
     _wait_until(deadline)
-    assert tx_execution_succeeded(contract.judge.transact(args=[pid], **SLOW))
+    assert tx_execution_succeeded(_write(contract, "judge", [pid]))
 
-    claimable_after = int(contract.get_claimable.call(args=[owner]))
-    assert not tx_execution_succeeded(contract.judge.transact(args=[pid], **SLOW))
-    assert int(contract.get_claimable.call(args=[owner])) == claimable_after
+    claimable_after = int(_read(contract, "get_claimable", [owner]))
+    assert not tx_execution_succeeded(_write(contract, "judge", [pid]))
+    assert int(_read(contract, "get_claimable", [owner])) == claimable_after
