@@ -21,7 +21,8 @@ import pytest
 from gltest import create_accounts, get_contract_factory, get_default_account
 from gltest.assertions import tx_execution_succeeded
 
-CONTRACT_PATH = "contracts/public_pledge.py"
+# gltest resolves contract paths relative to the `contracts/` directory.
+CONTRACT_PATH = "public_pledge.py"
 
 # A public, stable page. Pinned content policy: it must keep mentioning GenLayer.
 DOCS_URL = "https://docs.genlayer.com/llms.txt"
