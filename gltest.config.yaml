@@ -4,7 +4,11 @@ networks:
   localnet:
     url: "http://127.0.0.1:4000/api"
 
-  studionet: {}
+  # Used by .github/workflows/onchain.yml. The key comes from the
+  # DEPLOYER_PRIVATE_KEY repository secret and is written into .env at run time.
+  studionet:
+    accounts:
+      - "${ACCOUNT_PRIVATE_KEY}"
 
 paths:
   contracts: "contracts"

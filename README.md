@@ -77,24 +77,54 @@ Catatan desain:
 
 ## Yang belum teruji
 
-CI sudah menjalankan lint, test direct-mode (web dan LLM di-mock), serta build dan typecheck frontend. Yang tersisa adalah perilaku di jaringan sungguhan:
+CI sudah menjalankan lint, test direct-mode (web dan LLM di-mock), serta build dan typecheck frontend. Test on-chain ada di `tests/integration/` dan dijalankan lewat workflow terpisah (lihat bagian berikutnya).
 
-- **Konsensus validator dan LLM sungguhan.** Test hanya membuktikan logika kontrak. Cara validator nyata menilai bukti baru terlihat saat `judge` dijalankan di Studio.
-- **`withdraw` yang berhasil** mengirim pesan eksternal (`emit_transfer`). Direct mode tidak diketahui mendukungnya, jadi hanya guard "nothing to withdraw" yang dites di sana. Uji transfer sungguhan di Studio atau GLSim.
+- **Konsensus validator dan LLM sungguhan.** Direct mode memakai data tiruan. Perilaku validator nyata hanya terlihat dari test on-chain.
 - **Frontend di browser.** Alur wallet, switch jaringan, dan dialog transaksi belum pernah dicoba dengan wallet sungguhan.
+
+## Test on-chain (Studionet)
+
+`tests/integration/test_public_pledge.py` mendeploy kontrak ke Studionet lalu menguji semua method dengan validator, pengambilan web, dan LLM sungguhan. Isinya:
+
+- **Deploy dan view:** `get_config`, `get_pledges`, `get_pledge`, `get_pledge_count`.
+- **Alur utama:** `create_pledge` menyimpan state dengan benar; lalu tenggat lewat, `judge`, dapat verdict `kept`, saldo `claimable` bertambah, dan `withdraw` benar-benar mentransfer GEN keluar.
+- **Adversarial, input ditolak dan tidak tersimpan:** stake 0, beneficiary sama dengan pemilik, beneficiary zero address, URL `http://`, URL kepanjangan, tenggat di masa lalu, tenggat melewati horizon, janji kosong, kriteria kepanjangan.
+- **Adversarial, urutan dan otorisasi:** `judge` sebelum tenggat, `refund_expired` sebelum masa tunggu, id pledge tak dikenal, `withdraw` tanpa saldo oleh akun lain, dan `judge` kedua kali pada pledge yang sudah selesai (tidak boleh membayar dua kali).
+- **Adversarial, AI dan bukti:** kriteria yang tidak mungkin dipenuhi bukti tidak boleh menghasilkan `kept`; halaman bukti 404 harus menggagalkan `judge` dan meninggalkan stake utuh.
+
+Menjalankan lewat GitHub Actions (disarankan):
+
+1. Buat akun test baru khusus untuk ini. Jangan pakai key yang Anda pakai di tempat lain.
+2. Isi sedikit GEN di Studionet untuk alamat tersebut. Faucet bawaan Studio ada di tombol 💧 pada pemilih akun di [studio.genlayer.com](https://studio.genlayer.com).
+3. Buka repo di GitHub, lalu **Settings → Secrets and variables → Actions → New repository secret**. Name: `DEPLOYER_PRIVATE_KEY`. Value: private key akun test itu (`0x...`).
+4. Buka tab **Actions → On-chain checks (Studionet) → Run workflow**.
+
+Workflow ini juga jalan otomatis kalau `tests/integration/**`, `contracts/public_pledge.py`, atau workflow itu sendiri berubah di `main`. Alamat kontrak hasil deploy muncul di ringkasan job dan di log (`PublicPledge deployed at 0x...`).
+
+Menjalankan di mesin sendiri:
+
+```bash
+ACCOUNT_PRIVATE_KEY=0x... gltest tests/integration/ -v -s --network studionet
+```
+
+Catatan keamanan: jangan pernah commit private key. `.env` sudah masuk `.gitignore`, dan workflow menulis key ke `.env` dari secret hanya selama job berjalan. Key tetap terbaca oleh runner GitHub dan siapa pun yang bisa melihat log job Anda, jadi pakai akun sekali pakai yang hanya berisi GEN test, lalu hapus atau rotate setelah selesai.
+
+Catatan cakupan: test ini membuktikan perilaku pada kasus-kasus di atas. Model AI tetap bisa berbeda pendapat antar-run, jadi verdict untuk kasus batas bisa bervariasi. Yang dijamin oleh test adalah hal-hal yang tidak boleh terjadi: pledge tidak valid tersimpan, stake tidak berpindah tanpa putusan, dan janji yang tidak terbukti tidak dibayar ke pemilik.
 
 ## Struktur
 
 ```
 contracts/public_pledge.py          kontrak
-tests/direct/                       test direct-mode (web dan LLM di-mock)
-  conftest.py                       helper, konstanta waktu, fixture
+tests/direct/                       unit test, web dan LLM di-mock
+tests/integration/                  test on-chain di Studionet (validator dan LLM sungguhan)
+.github/workflows/ci.yml            lint, unit test, build frontend
+.github/workflows/onchain.yml       deploy dan test on-chain (butuh secret)
 gltest.config.yaml                  konfigurasi jaringan gltest
 requirements.txt                    dependency Python (versi mengikuti boilerplate resmi)
 ```
 
 ## Berikutnya
 
-1. Deploy ke Studio, isi `NEXT_PUBLIC_CONTRACT_ADDRESS`, dan uji satu pledge dari awal sampai `withdraw` lewat frontend.
-2. Tambahkan test integrasi (`gltest`) untuk alur penuh di GLSim.
+1. Isi `NEXT_PUBLIC_CONTRACT_ADDRESS` dengan alamat hasil workflow on-chain, lalu uji frontend di browser dengan wallet sungguhan.
+2. Tambahkan test integrasi GLSim untuk iterasi cepat tanpa menghabiskan GEN.
 3. Migrasi ke `genlayer-js` v2 untuk Testnet Bradbury, termasuk estimasi fee sebelum menulis (`estimateTransactionFeesForWrite`) untuk `create_pledge` (payable, `value` + fee), `judge`, `refund_expired`, dan `withdraw`.

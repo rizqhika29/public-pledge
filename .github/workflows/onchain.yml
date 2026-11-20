@@ -1,0 +1,73 @@
+name: On-chain checks (Studionet)
+
+# Manual by default: this spends real (test) GEN and takes many minutes,
+# because every write needs validator consensus. It also runs automatically
+# when the contract or the on-chain tests change.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/onchain.yml"
+      - "contracts/public_pledge.py"
+      - "tests/integration/**"
+
+jobs:
+  studionet:
+    name: Deploy and test on Studionet
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Look for the test account secret
+        id: preflight
+        env:
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+        run: |
+          if [ -n "$DEPLOYER_PRIVATE_KEY" ]; then
+            echo "has_key=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_key=false" >> "$GITHUB_OUTPUT"
+            echo "No DEPLOYER_PRIVATE_KEY secret is set, so the on-chain run is skipped." >> "$GITHUB_STEP_SUMMARY"
+            echo "Add a Studionet test key under Settings -> Secrets and variables -> Actions, then re-run this workflow." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.preflight.outputs.has_key == 'true'
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        if: steps.preflight.outputs.has_key == 'true'
+        run: pip install -r requirements.txt
+
+      - name: Deploy and run integration tests
+        if: steps.preflight.outputs.has_key == 'true'
+        env:
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+        run: |
+          set -o pipefail
+          umask 077
+          printf 'ACCOUNT_PRIVATE_KEY=%s\n' "$DEPLOYER_PRIVATE_KEY" > .env
+          gltest tests/integration/ -v -s --network studionet 2>&1 | tee onchain.log
+
+      - name: Report the deployed address
+        if: always() && steps.preflight.outputs.has_key == 'true'
+        run: |
+          address=$(grep -oE 'PublicPledge deployed at 0x[0-9a-fA-F]{40}' onchain.log 2>/dev/null | tail -1 | awk '{print $NF}')
+          if [ -n "$address" ]; then
+            echo "Deployed at \`$address\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "Set NEXT_PUBLIC_CONTRACT_ADDRESS=$address in the frontend." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No contract address was found in the log; the deployment likely failed." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload the run log
+        if: always() && steps.preflight.outputs.has_key == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: onchain-log
+          path: onchain.log
+          if-no-files-found: ignore
