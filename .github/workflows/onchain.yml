@@ -43,6 +43,20 @@ jobs:
         if: steps.preflight.outputs.has_key == 'true'
         run: pip install -r requirements.txt
 
+      - name: Show which account will be used
+        if: steps.preflight.outputs.has_key == 'true'
+        continue-on-error: true
+        env:
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+        run: |
+          printf 'ACCOUNT_PRIVATE_KEY=%s\n' "$DEPLOYER_PRIVATE_KEY" > .env
+          python - <<'PY'
+          from gltest import get_default_account
+          from dotenv import load_dotenv
+          load_dotenv()
+          print("Test account:", get_default_account().address)
+          PY
+
       - name: Deploy and run integration tests
         if: steps.preflight.outputs.has_key == 'true'
         env:
