@@ -19,6 +19,17 @@ npm run build && npm run typecheck
 
 Both are read at build time, so a change needs a restart.
 
+## Tests
+
+```bash
+npx playwright install chromium   # once
+npm run test:e2e
+```
+
+`e2e/` drives Chromium against the app itself. `mock-wallet.ts` installs a fake EIP-6963 wallet, so no extension and no key is needed, and every spec aborts requests to the GenLayer RPC. What is under test is the UI's own behaviour: which wallet is contacted, what is shown when a prompt is dismissed, that the wrong chain produces exactly one switch request, and that the create form reports missing fields without asking the wallet for a signature.
+
+What it does not cover: a real extension's prompt, a real signature, and anything that needs the chain - creating, judging and withdrawing a pledge are covered by the on-chain suite in the repository root.
+
 ## Pages
 
 | Route | Purpose |

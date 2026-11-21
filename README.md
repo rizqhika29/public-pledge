@@ -6,7 +6,7 @@ Public commitments staked on GenLayer. Someone writes a promise in plain languag
 - Promise broken: the stake can be claimed by the beneficiary the owner named up front.
 - Evidence unreadable or ambiguous: the pledge stays open, and after a grace period the owner can take the stake back.
 
-Status: **contract + direct-mode tests + Next.js frontend**, all green in CI: contract lint, 49 direct-mode tests, the frontend build and typecheck, and 19 on-chain tests against Studionet with real validators and a real LLM. The frontend has not been tried in a browser with a real wallet yet.
+Status: **contract + direct-mode tests + Next.js frontend + browser end-to-end tests**. CI runs contract lint, 49 direct-mode tests, the frontend build and typecheck, 5 Chromium end-to-end tests, and the on-chain suite (20 tests) against Studionet with real validators and a real LLM.
 
 ## Lifecycle
 
@@ -81,6 +81,8 @@ Next.js 16 + Tailwind 4 + `genlayer-js` 1.1.8 (pinned), in `frontend/`.
 cd frontend
 npm install
 npm run dev                    # http://localhost:3000
+npx playwright install chromium   # once, for the browser tests
+npm run test:e2e               # 5 Chromium tests, closed wallet, no network
 ```
 
 It works with no configuration: with `NEXT_PUBLIC_CONTRACT_ADDRESS` unset it talks to the Studionet contract the on-chain workflow last deployed (`0x945ebf6cb2109ed732318019b2fc9d1513ab2f54` at the time of writing, recorded in `frontend/lib/config.ts`). Set the variable to override it, which Localnet requires.
@@ -97,9 +99,9 @@ Design notes:
 
 ## What has not been verified
 
-CI runs contract lint, direct-mode tests (web and LLM mocked), the frontend build and typecheck, and the on-chain suite described in the next section.
+CI runs contract lint, direct-mode tests (web and LLM mocked), the frontend build and typecheck, the Chromium end-to-end tests in `frontend/e2e/`, and the on-chain suite described in the next section.
 
-- **The frontend in a browser.** Wallet connect, network switching and the transaction dialog have not been exercised with a real wallet.
+- **The frontend in a real browser with a real extension.** `frontend/e2e/` runs Chromium against the app with a fake EIP-6963 wallet: connect, a dismissed prompt, the wrong chain, and form validation. It cannot reproduce what a specific extension does with a real signature.
 - **GEN actually landing in a wallet.** The keep-path test proves `withdraw` is accepted and that the `claimable` balance is zeroed. It does not read the recipient's account balance, so a delayed external transfer would not show up.
 - **Stability across runs.** Verdicts come from a real model, so a borderline case can be judged differently from one run to the next. What the suite pins down is the list of things that must never happen, at the end of the on-chain section.
 
@@ -112,6 +114,7 @@ CI runs contract lint, direct-mode tests (web and LLM mocked), the frontend buil
 - **Adversarial inputs, rejected and not stored:** zero stake, beneficiary equal to the owner, zero-address beneficiary, `http://` URL, overlong URL, deadline in the past, deadline beyond the horizon, blank promise, overlong criteria.
 - **Adversarial ordering and authorisation:** `judge` before the deadline, `refund_expired` before the grace period and before any recorded judgement, an unknown pledge id, `withdraw` with an empty balance from another account, and a second `judge` on an already settled pledge (which must not pay twice).
 - **Adversarial AI and evidence:** criteria the evidence cannot satisfy must never end as `kept`; a decisive verdict must carry a quote that really occurs on the page; a 404 evidence page is recorded as inconclusive, moves no stake, and still leaves the refund path open.
+- **Prompt injection:** the promise and the criteria are attacker-controlled text inside the judge prompt, so two pledges order the judge to answer `kept` (one hides it in the criteria, the other in the promise) for a release the page never shows. Neither may end as `kept` or move the stake.
 
 Running it through GitHub Actions (recommended):
 
@@ -140,15 +143,16 @@ Resilience note: Studionet occasionally answers a JSON-RPC request with an HTML 
 contracts/public_pledge.py          the contract
 tests/direct/                       unit tests, web and LLM mocked
 tests/integration/                  on-chain tests on Studionet (real validators and LLM)
-.github/workflows/ci.yml            lint, unit tests, frontend build
+.github/workflows/ci.yml            lint, unit tests, frontend build, browser tests
 .github/workflows/onchain.yml       deploy and on-chain tests (needs the secret)
 gltest.config.yaml                  gltest network configuration
 frontend/                           Next.js app
+frontend/e2e/                       browser tests with a fake EIP-6963 wallet
 requirements.txt                    Python dependencies (versions follow the official boilerplate)
 ```
 
 ## Next
 
-1. Put the address from the on-chain workflow into `NEXT_PUBLIC_CONTRACT_ADDRESS`, then try the frontend in a browser with a real wallet.
+1. Try the frontend with a real wallet against the Studionet deployment. The browser tests use a fake wallet, so how a real extension behaves is still unverified.
 2. Add GLSim integration tests for fast iteration without spending GEN.
 3. Migrate to `genlayer-js` v2 for Testnet Bradbury, including fee estimation before writing (`estimateTransactionFeesForWrite`) for `create_pledge` (payable, `value` + fee), `judge`, `refund_expired`, and `withdraw`.
