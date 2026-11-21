@@ -1,9 +1,11 @@
-// Fails when the contract this frontend is pinned to cannot be read.
+// Checks that the contract this frontend is pinned to can be read, and probes
+// which read options work.
 //
-// The address is compiled into the app, so a stale or mistyped one only shows up
-// as "contract not found" in a browser console. This reads the same view the home
-// page reads, through the same SDK and the same chain the browser uses, so CI
-// catches it before anyone opens the site.
+// The address is compiled into the app, so a failed read only shows up as an RPC
+// error in a browser console. This runs the same SDK against the same chain, and
+// tries each `transactionHashVariant` because a read is evaluated against a
+// transaction snapshot: `latest-nonfinal` and `latest-final` can resolve to
+// different points in the chain's history.
 
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -35,24 +37,49 @@ if (!/^0x[0-9a-fA-F]{40}$/.test(address)) {
 }
 
 const rpc = chain.rpcUrls?.default?.http?.[0] ?? "unknown";
+console.log(`Chain:   ${network} (id ${chain.id})`);
+console.log(`RPC:     ${rpc}`);
+console.log(`Address: ${address}`);
+console.log("");
 
-try {
-  const client = createClient({ chain });
-  const count = await client.readContract({
-    address,
-    functionName: "get_pledge_count",
-    args: [],
-  });
-  console.log(`Pinned contract ${address} answered on ${network}: ${String(count)} pledge(s).`);
-  console.log(`RPC: ${rpc}`);
-} catch (error) {
-  console.error(`The pinned contract could not be read on ${network}.`);
-  console.error(`  address: ${address}`);
-  console.error(`  rpc:     ${rpc}`);
-  console.error(`  error:   ${error instanceof Error ? error.message : String(error)}`);
-  console.error("");
-  console.error("The frontend would show this as an RPC error in the browser console.");
-  console.error("Deploy the contract again (Actions -> On-chain checks), then update CONTRACT_ADDRESS");
-  console.error("in frontend/lib/config.ts to the address that run printed.");
+const probes = [
+  { label: "default (how the app calls it)", options: {} },
+  { label: "latest-nonfinal", options: { transactionHashVariant: "latest-nonfinal" } },
+  { label: "latest-final", options: { transactionHashVariant: "latest-final" } },
+];
+
+const failures = [];
+
+for (const probe of probes) {
+  try {
+    const client = createClient({ chain });
+    const value = await client.readContract({
+      address,
+      functionName: "get_pledge_count",
+      args: [],
+      ...probe.options,
+    });
+    console.log(`OK    ${probe.label}: ${String(value)} pledge(s)`);
+  } catch (error) {
+    const message = (error instanceof Error ? error.message : String(error))
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)[0];
+    failures.push({ label: probe.label, message });
+    console.log(`FAIL  ${probe.label}: ${message}`);
+  }
+}
+
+console.log("");
+
+if (failures.length === probes.length) {
+  console.error("No read option could reach the contract. Either the address is not on this");
+  console.error("chain any more, or this build is calling it in a way the node rejects.");
   process.exit(1);
+}
+
+const working = probes.filter((probe) => !failures.some((f) => f.label === probe.label));
+if (failures.length > 0) {
+  console.log("Some read options failed. The app must use one that works:");
+  for (const probe of working) console.log(`  ${probe.label} -> ${JSON.stringify(probe.options)}`);
 }
