@@ -108,7 +108,7 @@ The app has no server of its own: every read and write goes from the visitor's b
 
 Do not add `NEXT_PUBLIC_*` variables in the Vercel project. This app reads none, so a value set there changes nothing and only looks like working configuration.
 
-One thing worth doing before the first deploy: the repository has no `package-lock.json`, so `npm install` resolves the semver ranges fresh on every build. Run `npm install` once inside `frontend/` and commit the lockfile; CI and Vercel then build the exact same versions.
+`frontend/package-lock.json` is committed, so CI and Vercel install exactly the same versions. [`.github/workflows/lockfile.yml`](.github/workflows/lockfile.yml) produces it on Node 22 — on demand, and automatically when `frontend/package.json` changes — and only commits a lockfile that built successfully. CI installs with `npm ci`, so a manifest that has drifted from the lockfile fails the build instead of quietly resolving newer versions.
 
 What a hosted deployment means in practice:
 
@@ -163,6 +163,7 @@ contracts/public_pledge.py          the contract
 tests/direct/                       unit tests, web and LLM mocked
 tests/integration/                  on-chain tests on Studionet (real validators and LLM)
 .github/workflows/ci.yml            lint, unit tests, frontend build, browser tests
+.github/workflows/lockfile.yml      regenerates frontend/package-lock.json
 .github/workflows/onchain.yml       deploy and on-chain tests (needs the secret)
 gltest.config.yaml                  gltest network configuration
 frontend/                           Next.js app

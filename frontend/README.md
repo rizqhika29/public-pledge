@@ -3,7 +3,7 @@
 Next.js 16 (App Router) + Tailwind 4 + `genlayer-js` 1.1.8, talking to the `PublicPledge` intelligent contract in `../contracts/public_pledge.py`.
 
 ```bash
-npm install
+npm ci                         # exact versions from the committed lockfile
 npm run dev                    # http://localhost:3000
 npm run build && npm run typecheck
 ```

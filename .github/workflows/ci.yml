@@ -50,7 +50,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install --no-audit --no-fund
+      # `npm ci` installs exactly what frontend/package-lock.json pins, and fails
+      # loudly if package.json has drifted from it. lockfile.yml keeps them in sync.
+      - run: npm ci
       # Build first: `next build` generates the route types that `tsc` reads.
       - run: npm run build
       - run: npm run typecheck
@@ -67,7 +69,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install --no-audit --no-fund
+      # `npm ci` installs exactly what frontend/package-lock.json pins, and fails
+      # loudly if package.json has drifted from it. lockfile.yml keeps them in sync.
+      - run: npm ci
       # No wallet extension and no key: e2e/mock-wallet.ts installs a fake
       # EIP-6963 wallet, and the tests block the GenLayer RPC so they stay offline.
       - run: npx playwright install --with-deps chromium
