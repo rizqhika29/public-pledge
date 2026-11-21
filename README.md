@@ -6,7 +6,7 @@ Public commitments staked on GenLayer. Someone writes a promise in plain languag
 - Promise broken: the stake can be claimed by the beneficiary the owner named up front.
 - Evidence unreadable or ambiguous: the pledge stays open, and after a grace period the owner can take the stake back.
 
-Status: **contract + direct-mode tests + Next.js frontend**. CI is green for contract lint, 39 direct-mode tests, and the frontend build and typecheck. The on-chain suite exists and runs against Studionet (see below); the frontend has not been tried in a browser with a real wallet yet.
+Status: **contract + direct-mode tests + Next.js frontend**. CI is green for contract lint, 48 direct-mode tests, and the frontend build and typecheck. The on-chain suite exists and runs against Studionet (see below); the frontend has not been tried in a browser with a real wallet yet.
 
 ## Lifecycle
 
@@ -128,6 +128,8 @@ ACCOUNT_PRIVATE_KEY=0x... gltest tests/integration/ -v -s --network studionet
 Security notes: never commit a private key. `.env` is gitignored, and the workflow writes the key into `.env` from the secret only for the duration of the job. The key is still readable by the GitHub runner and by anyone who can see your job logs, so use a single-use account holding only test GEN, then delete or rotate it.
 
 Coverage note: these tests prove behaviour for the cases above. The AI model can still disagree across runs, so verdicts on borderline cases may vary. What the suite does guarantee is what must never happen: invalid pledges being stored, the stake moving without a verdict, and an unproven promise paying the owner.
+
+Resilience note: Studionet occasionally answers a JSON-RPC request with an HTML error page (`502 Bad Gateway`) instead of JSON, which the SDK reports as `gen_call returned invalid JSON`. Reads are retried with backoff, because a read changes nothing. Writes are deliberately **not** retried: when a submission fails we do not know whether the transaction reached the chain, so repeating it could send a second stake or judge a pledge twice. A transient failure during a write still fails the run, on purpose.
 
 ## Layout
 

@@ -39,6 +39,28 @@ ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 # A write can take minutes: page fetch + several LLM calls + voting.
 SLOW = {"wait_interval": 10_000, "wait_retries": 90}
 
+# Studionet sometimes answers a JSON-RPC request with an HTML error page instead
+# of JSON, which the SDK turns into "gen_call returned invalid JSON ... 502".
+# Reads are retried because they change nothing. Writes are NOT retried: if the
+# submission itself failed we do not know whether the transaction reached the
+# chain, so repeating it could send a second stake or judge a pledge twice.
+TRANSIENT_RPC_MARKERS = (
+    "returned invalid json",
+    "bad gateway",
+    "service unavailable",
+    "gateway timeout",
+    "temporarily unavailable",
+    "connection",
+    "timed out",
+    "timeout",
+    " 429",
+    " 502",
+    " 503",
+    " 504",
+)
+READ_ATTEMPTS = 5
+READ_BACKOFF_SECONDS = 5
+
 
 def _now() -> int:
     return int(time.time())
@@ -51,9 +73,38 @@ def _wait_until(unix_seconds: int) -> None:
         time.sleep(delay)
 
 
+def _is_transient_rpc_error(err: Exception) -> bool:
+    text = str(err).lower()
+    return any(marker in text for marker in TRANSIENT_RPC_MARKERS)
+
+
+def _retry_read(fn):
+    """Run an idempotent read, backing off while the RPC endpoint is flaking."""
+    delay = READ_BACKOFF_SECONDS
+    last: Exception | None = None
+    for attempt in range(1, READ_ATTEMPTS + 1):
+        try:
+            return fn()
+        except Exception as err:  # noqa: BLE001 - classified right here
+            if not _is_transient_rpc_error(err):
+                raise
+            last = err
+            print(
+                f"transient RPC error on read (attempt {attempt}/{READ_ATTEMPTS}): {err}"
+            )
+            if attempt < READ_ATTEMPTS:
+                time.sleep(delay)
+                delay *= 2
+    raise last  # type: ignore[misc]
+
+
 def _read(contract, method: str, args: list):
-    """Read a view method: contract.<method>(args=...).call()."""
-    return getattr(contract, method)(args=args).call()
+    """Read a view method: contract.<method>(args=...).call().
+
+    Retried on transient RPC failures, so one flaky gateway response does not
+    turn an otherwise green run red.
+    """
+    return _retry_read(lambda: getattr(contract, method)(args=args).call())
 
 
 def _write(contract, method: str, args: list, value: int = 0):
