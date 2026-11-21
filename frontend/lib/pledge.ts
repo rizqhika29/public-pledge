@@ -17,6 +17,8 @@ export interface Pledge {
   status: PledgeStatus;
   /** Latest reasoning agreed by the validators' AI (also set after an inconclusive check). */
   note: string;
+  /** Verbatim passage from the evidence page that decided a conclusive verdict. */
+  evidenceQuote: string;
   /** How many times the validators have examined the evidence. */
   checks: number;
 }
@@ -53,6 +55,7 @@ export function parsePledge(raw: unknown): Pledge {
     deadline: int(r.deadline),
     status: STATUSES.includes(status) ? status : "active",
     note: text(r.note),
+    evidenceQuote: text(r.evidence_quote),
     checks: int(r.checks),
   };
 }

@@ -8,6 +8,8 @@ GLSim / Studio instead.
 
 from tests.direct.conftest import (
     DAY,
+    DEFAULT_EVIDENCE,
+    DEFAULT_QUOTE,
     T0,
     create,
     iso,
@@ -60,14 +62,57 @@ def test_validator_rejects_different_verdict(
 def test_validator_rejects_leader_lying_about_verdict(
     pledge, direct_vm, direct_alice, direct_bob
 ):
-    """A leader claiming `kept` while the evidence says `broken` must lose."""
+    """A leader claiming `kept` while the evidence says `broken` must lose.
+
+    The forged answer even carries a real quote from the page, so it cannot be
+    rejected on grounding alone: the validator's own verdict has to disagree.
+    """
     _judged(pledge, direct_vm, direct_alice, direct_bob, "kept")
 
     direct_vm.clear_mocks()
-    mock_evidence(direct_vm, body="Nothing here.")
-    mock_verdict(direct_vm, "broken")
+    mock_evidence(direct_vm, body=DEFAULT_EVIDENCE)
+    mock_verdict(direct_vm, "broken", quote=DEFAULT_QUOTE)
 
-    forged = {"verdict": "kept", "reason": "trust me"}
+    forged = {"verdict": "kept", "reason": "trust me", "quote": DEFAULT_QUOTE}
+    assert direct_vm.run_validator(leader_result=forged) is False
+
+
+def test_validator_rejects_invented_quote(pledge, direct_vm, direct_alice, direct_bob):
+    """A quoted passage that is not on the page makes the proposal ungrounded."""
+    _judged(pledge, direct_vm, direct_alice, direct_bob, "kept")
+
+    direct_vm.clear_mocks()
+    mock_evidence(direct_vm)
+    mock_verdict(direct_vm, "kept")
+
+    forged = {
+        "verdict": "kept",
+        "reason": "looks good",
+        "quote": "This passage does not appear anywhere on the fetched page",
+    }
+    assert direct_vm.run_validator(leader_result=forged) is False
+
+
+def test_validator_rejects_leader_without_quote(
+    pledge, direct_vm, direct_alice, direct_bob
+):
+    _judged(pledge, direct_vm, direct_alice, direct_bob, "kept")
+
+    forged = {"verdict": "kept", "reason": "trust me", "quote": ""}
+    assert direct_vm.run_validator(leader_result=forged) is False
+
+
+def test_validator_rejects_when_it_cannot_read_the_evidence(
+    pledge, direct_vm, direct_alice, direct_bob
+):
+    """If our own fetch fails, nothing the leader claims about the page stands."""
+    _judged(pledge, direct_vm, direct_alice, direct_bob, "kept")
+
+    direct_vm.clear_mocks()
+    mock_evidence(direct_vm, status=503, body="down")
+    mock_verdict(direct_vm, "kept")
+
+    forged = {"verdict": "kept", "reason": "trust me", "quote": DEFAULT_QUOTE}
     assert direct_vm.run_validator(leader_result=forged) is False
 
 

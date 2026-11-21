@@ -42,12 +42,23 @@ def expect_error(fn, text, *args, **kwargs):
     raise AssertionError(f"expected an error containing {text!r}, but the call succeeded")
 
 
-def mock_evidence(vm, status=200, body="Release v1 was published on 2025-01-05."):
+DEFAULT_EVIDENCE = "Release v1 was published on 2025-01-05."
+# A conclusive verdict must quote the page, so the quote has to be in the body.
+DEFAULT_QUOTE = "Release v1 was published on 2025-01-05"
+
+
+def mock_evidence(vm, status=200, body=DEFAULT_EVIDENCE):
     vm.mock_web(r".*example\.org/proof.*", {"status": status, "body": body})
 
 
-def mock_verdict(vm, verdict, reason="Because the evidence says so."):
-    vm.mock_llm(r"verdict", json.dumps({"verdict": verdict, "reason": reason}))
+def mock_verdict(vm, verdict, reason="Because the evidence says so.", quote=None):
+    """Mock the model reply. `quote` defaults to the default evidence passage."""
+    if quote is None:
+        quote = "" if verdict == "inconclusive" else DEFAULT_QUOTE
+    vm.mock_llm(
+        r"verdict",
+        json.dumps({"verdict": verdict, "reason": reason, "quote": quote}),
+    )
 
 
 @pytest.fixture

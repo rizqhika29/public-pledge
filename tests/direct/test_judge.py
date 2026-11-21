@@ -54,8 +54,13 @@ def test_judge_kept_credits_owner(pledge, direct_vm, direct_alice, direct_bob):
 
 def test_judge_broken_credits_beneficiary(pledge, direct_vm, direct_alice, direct_bob):
     create(pledge, direct_vm, direct_alice, direct_bob)
-    mock_evidence(direct_vm, body="Nothing was released.")
-    mock_verdict(direct_vm, "broken", "No release exists.")
+    mock_evidence(direct_vm, body="No release exists. The repository has no tags yet.")
+    mock_verdict(
+        direct_vm,
+        "broken",
+        "No release exists.",
+        quote="The repository has no tags yet",
+    )
     _after_deadline(direct_vm)
 
     result = pledge.judge(0)
@@ -125,15 +130,53 @@ def test_judge_unknown_pledge_rejected(pledge):
     expect_error(pledge.judge, "pledge not found", 7)
 
 
-def test_evidence_http_error_reverts(pledge, direct_vm, direct_alice, direct_bob):
+def test_unreachable_evidence_is_recorded_as_inconclusive(
+    pledge, direct_vm, direct_alice, direct_bob
+):
+    """A dead source must not revert: it has to leave an auditable record so the
+    stake can still be recovered after the grace period."""
     create(pledge, direct_vm, direct_alice, direct_bob)
     mock_evidence(direct_vm, status=404, body="not found")
     mock_verdict(direct_vm, "kept")
     _after_deadline(direct_vm)
 
-    expect_error(pledge.judge, "EXTERNAL", 0)
+    result = pledge.judge(0)
+
+    assert result["verdict"] == "inconclusive"
+    assert result["quote"] == ""
+    p = pledge.get_pledge(0)
+    assert p["status"] == "active"
+    assert p["checks"] == 1
+    assert "unavailable" in p["note"].lower()
+    assert pledge.get_claimable(to_hex(direct_alice)) == 0
+    assert pledge.get_claimable(to_hex(direct_bob)) == 0
+
+
+def test_conclusive_verdict_without_quote_reverts(
+    pledge, direct_vm, direct_alice, direct_bob
+):
+    create(pledge, direct_vm, direct_alice, direct_bob)
+    mock_evidence(direct_vm)
+    mock_verdict(direct_vm, "kept", quote="")
+    _after_deadline(direct_vm)
+
+    expect_error(pledge.judge, "LLM_ERROR", 0)
     assert pledge.get_pledge(0)["status"] == "active"
-    assert pledge.get_pledge(0)["checks"] == 0
+
+
+def test_quote_must_exist_in_the_evidence(pledge, direct_vm, direct_alice, direct_bob):
+    """The model cannot invent a passage: an ungrounded quote is rejected."""
+    create(pledge, direct_vm, direct_alice, direct_bob)
+    mock_evidence(direct_vm)
+    mock_verdict(
+        direct_vm,
+        "kept",
+        quote="This sentence was never on the evidence page at all",
+    )
+    _after_deadline(direct_vm)
+
+    expect_error(pledge.judge, "LLM_ERROR", 0)
+    assert pledge.get_pledge(0)["status"] == "active"
 
 
 def test_garbage_verdict_reverts(pledge, direct_vm, direct_alice, direct_bob):

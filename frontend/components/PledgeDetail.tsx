@@ -54,9 +54,19 @@ function VerdictPanel({ pledge }: { pledge: Pledge }) {
             <blockquote className="mt-3 border-l-2 border-ink-500 pl-3 text-sm italic text-zinc-300">
               {note}
               <footer className="mt-1 text-xs not-italic text-zinc-500">
-                Reasoning from the accepted proposal. Validators agreed on the verdict itself; their own wording may differ.
+                Verdict reasoning. Validators agreed on the verdict itself; their own wording may differ.
               </footer>
             </blockquote>
+          )}
+          {pledge.evidenceQuote && (
+            <figure className="mt-3 rounded-lg border border-ink-600 bg-ink-950 p-3">
+              <figcaption className="text-xs uppercase tracking-wide text-zinc-500">
+                Passage from the evidence that decided it
+              </figcaption>
+              <blockquote className="mt-2 break-words font-mono text-xs leading-relaxed text-zinc-300">
+                {pledge.evidenceQuote}
+              </blockquote>
+            </figure>
           )}
           {checks > 0 && <p className="mt-3 text-xs text-zinc-500">Shows the latest accepted state. A decision can be appealed until it is finalized.</p>}
         </div>

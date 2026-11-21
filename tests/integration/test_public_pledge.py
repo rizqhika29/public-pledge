@@ -235,6 +235,8 @@ def test_promise_kept_settles_and_pays_out(contract, beneficiary):
     print(f"verdict={pledge['status']} note={pledge['note']!r}")
     assert pledge["status"] == "kept"
     assert int(pledge["checks"]) >= 1
+    # A conclusive verdict has to be grounded in text from the page.
+    assert len(pledge["evidence_quote"]) >= 24, "verdict stored without evidence"
     assert int(_read(contract, "get_claimable", [owner])) == claimable_before + STAKE
     assert int(_read(contract, "get_record", [owner])["kept"]) >= 1
 
@@ -268,8 +270,12 @@ def test_unmet_criteria_never_pays_the_owner(contract, beneficiary):
 
 
 @pytest.mark.integration
-def test_unreachable_evidence_settles_nothing(contract, beneficiary):
-    """A 404 evidence page must fail the judgement and leave the stake untouched."""
+def test_unreachable_evidence_is_recorded_without_settling(contract, beneficiary):
+    """A 404 evidence page is recorded as inconclusive, not silently swallowed.
+
+    It must not settle the pledge, must not move the stake, and must leave a
+    record so the owner still has an escape hatch after the grace period.
+    """
     owner = get_default_account().address
     deadline = _now() + 60
     receipt, pid = _create(contract, beneficiary, deadline=deadline, url=MISSING_URL)
@@ -279,12 +285,18 @@ def test_unreachable_evidence_settles_nothing(contract, beneficiary):
     _wait_until(deadline)
 
     judged = _write(contract, "judge", [pid])
-    assert not tx_execution_succeeded(judged), "judgement succeeded on a 404 page"
+    assert tx_execution_succeeded(judged), "a dead source should be recorded, not revert"
 
     pledge = _read(contract, "get_pledge", [pid])
+    print(f"verdict={pledge['status']} note={pledge['note']!r}")
     assert pledge["status"] == "active"
-    assert int(pledge["checks"]) == 0
+    assert int(pledge["checks"]) == 1
+    assert pledge["evidence_quote"] == ""
     assert int(_read(contract, "get_claimable", [owner])) == claimable_before
+
+    # Without that recorded attempt the refund path would be shut forever.
+    refunded = _write(contract, "refund_expired", [pid])
+    assert not tx_execution_succeeded(refunded), "grace period has not passed yet"
 
 
 @pytest.mark.integration

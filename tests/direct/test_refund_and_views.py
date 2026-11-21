@@ -21,15 +21,41 @@ GRACE = 7 * DAY
 
 def test_refund_before_grace_rejected(pledge, direct_vm, direct_alice, direct_bob):
     create(pledge, direct_vm, direct_alice, direct_bob)
+    mock_evidence(direct_vm)
+    mock_verdict(direct_vm, "inconclusive", "Unclear evidence.")
 
+    direct_vm.warp(iso(DEADLINE + 1))
+    pledge.judge(0)
     direct_vm.warp(iso(DEADLINE + GRACE - 1))
     expect_error(pledge.refund_expired, "grace period has not passed", 0)
+
+
+def test_refund_requires_a_recorded_judgement(
+    pledge, direct_vm, direct_alice, direct_bob
+):
+    """Closes the exit: an owner cannot skip judgement and take the stake back.
+
+    Without this rule an owner whose evidence plainly shows `broken` could wait
+    out the grace period and refund, leaving the beneficiary with nothing.
+    """
+    create(pledge, direct_vm, direct_alice, direct_bob)
+
+    direct_vm.warp(iso(DEADLINE + GRACE + 1))
+    expect_error(pledge.refund_expired, "judge the pledge at least once", 0)
+    assert pledge.get_pledge(0)["status"] == "active"
+    assert pledge.get_claimable(to_hex(direct_alice)) == 0
+    assert pledge.get_claimable(to_hex(direct_bob)) == 0
 
 
 def test_refund_after_grace_returns_stake_to_owner(
     pledge, direct_vm, direct_alice, direct_bob
 ):
     create(pledge, direct_vm, direct_alice, direct_bob)
+    mock_evidence(direct_vm)
+    mock_verdict(direct_vm, "inconclusive", "Page is ambiguous.")
+
+    direct_vm.warp(iso(DEADLINE + 1))
+    pledge.judge(0)
 
     direct_vm.warp(iso(DEADLINE + GRACE))
     pledge.refund_expired(0)
@@ -41,20 +67,47 @@ def test_refund_after_grace_returns_stake_to_owner(
     assert pledge.get_record(to_hex(direct_alice)) == {"kept": 0, "broken": 0}
 
 
+def test_refund_pays_the_owner_not_the_caller(
+    pledge, direct_vm, direct_alice, direct_bob, direct_charlie
+):
+    """refund_expired is permissionless, but it must never pay the caller."""
+    create(pledge, direct_vm, direct_alice, direct_bob)
+    mock_evidence(direct_vm)
+    mock_verdict(direct_vm, "inconclusive", "Page is ambiguous.")
+
+    direct_vm.warp(iso(DEADLINE + 1))
+    direct_vm.sender = direct_charlie
+    pledge.judge(0)
+
+    direct_vm.warp(iso(DEADLINE + GRACE))
+    direct_vm.sender = direct_charlie
+    pledge.refund_expired(0)
+
+    assert pledge.get_claimable(to_hex(direct_alice)) == STAKE
+    assert pledge.get_claimable(to_hex(direct_charlie)) == 0
+
+
 def test_refund_works_when_evidence_is_offline(
     pledge, direct_vm, direct_alice, direct_bob
 ):
     create(pledge, direct_vm, direct_alice, direct_bob)
     mock_evidence(direct_vm, status=500, body="down")
-    direct_vm.warp(iso(DEADLINE + GRACE + 1))
+    direct_vm.warp(iso(DEADLINE + 1))
 
-    expect_error(pledge.judge, "EXTERNAL", 0)
+    # A dead source is recorded, not reverted, so the escape hatch stays open.
+    assert pledge.judge(0)["verdict"] == "inconclusive"
+    direct_vm.warp(iso(DEADLINE + GRACE + 1))
     pledge.refund_expired(0)
     assert pledge.get_pledge(0)["status"] == "refunded"
 
 
 def test_refund_twice_rejected(pledge, direct_vm, direct_alice, direct_bob):
     create(pledge, direct_vm, direct_alice, direct_bob)
+    mock_evidence(direct_vm)
+    mock_verdict(direct_vm, "inconclusive", "Page is ambiguous.")
+
+    direct_vm.warp(iso(DEADLINE + 1))
+    pledge.judge(0)
     direct_vm.warp(iso(DEADLINE + GRACE))
 
     pledge.refund_expired(0)
@@ -78,11 +131,14 @@ def test_refund_after_judgement_rejected(pledge, direct_vm, direct_alice, direct
 
 def test_judge_after_refund_rejected(pledge, direct_vm, direct_alice, direct_bob):
     create(pledge, direct_vm, direct_alice, direct_bob)
+    mock_evidence(direct_vm)
+    mock_verdict(direct_vm, "inconclusive", "Page is ambiguous.")
+
+    direct_vm.warp(iso(DEADLINE + 1))
+    pledge.judge(0)
     direct_vm.warp(iso(DEADLINE + GRACE))
     pledge.refund_expired(0)
 
-    mock_evidence(direct_vm)
-    mock_verdict(direct_vm, "broken")
     expect_error(pledge.judge, "already settled", 0)
 
 
