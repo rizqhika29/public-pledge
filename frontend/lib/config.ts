@@ -34,13 +34,18 @@ export const FAUCET: Record<NetworkKey, { label: string; url: string }> = {
  *
  * Deployed on Studionet (chain id 61999) by `.github/workflows/onchain.yml`, and
  * the same run's on-chain suite passed against it, so the frontend and the tests
- * agree on one contract. Lowercase on purpose: an all-lowercase address is always
- * valid, while a mixed-case one is only valid if its EIP-55 checksum is correct.
+ * agree on one contract.
+ *
+ * This must keep the EIP-55 checksum casing exactly as the deploy printed it.
+ * Studionet resolves a contract by the address *string*, so an all-lowercase copy
+ * of this same address makes `gen_call` answer "Contract 0x… not found" even
+ * though the contract is live: measured on this deployment, lowercase fails and
+ * the checksummed form reads 9 pledges. `npm run check:contract` enforces it.
  *
  * To move to a new deployment, change this constant and rebuild. It is
  * deliberately not an environment variable: everyone should be on the same one.
  */
-export const CONTRACT_ADDRESS = "0xff8764165dc3d35afe8faf7f5b1bc57bc155c798";
+export const CONTRACT_ADDRESS = "0xfF8764165DC3D35AFe8faF7f5B1bC57bc155c798";
 
 /** Guard for a malformed edit above; a released build always passes it. */
 export const HAS_CONTRACT = /^0x[0-9a-fA-F]{40}$/.test(CONTRACT_ADDRESS);

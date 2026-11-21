@@ -1,13 +1,14 @@
-// Checks that the contract this frontend is pinned to can be read, and probes the
-// ways a read can be addressed, because a "Contract <address> not found" answer
-// can come from the address itself or from how the read is issued.
+// Checks that the contract this frontend is pinned to can be read.
 //
-// The probes are deliberately a matrix rather than a guess:
-//   - our address as pinned (all lowercase) and as an EIP-55 checksum,
-//   - the read evaluated against each transaction snapshot variant,
-//   - a control contract on the same chain, deployed by the same team from
-//     gentrophy, which tells us whether a failure is about this address or
-//     about the read path itself.
+// Two failures are worth catching here, and both are invisible until someone
+// opens the site:
+//   1. The address must be EIP-55 checksummed. Studionet resolves a contract by
+//      the address *string*, so the same address in all lowercase answers
+//      "Contract 0x… not found" even though the contract is live.
+//   2. The contract must still exist on the chain. It is read here through the
+//      same SDK and chain the browser uses, against each transaction snapshot
+//      variant, with a control contract to tell "our address is gone" apart from
+//      "the read path is broken".
 
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -16,7 +17,7 @@ import { createClient } from "genlayer-js";
 import { localnet, studionet } from "genlayer-js/chains";
 import { getAddress } from "viem";
 
-// GenTrophy on Studionet, read by the same kind of client. Only used as a control.
+// GenTrophy on Studionet, deployed from the same account. Only a control read.
 const CONTROL_ADDRESS = "0x2C02539A051F62007254abFdFcF0982f0Fa4e7Ec";
 const CONTROL_METHOD = "get_stats";
 
@@ -50,31 +51,27 @@ try {
   throw new Error(`CONTRACT_ADDRESS is not a valid address: ${address} (${String(error)})`);
 }
 
-console.log(`Chain:   ${network} (id ${chain.id})`);
-console.log(`RPC:     ${chain.rpcUrls?.default?.http?.[0] ?? "unknown"}`);
-console.log(`Address: ${address}`);
+console.log(`Chain:    ${network} (id ${chain.id})`);
+console.log(`RPC:      ${chain.rpcUrls?.default?.http?.[0] ?? "unknown"}`);
+console.log(`Address:  ${address}`);
 console.log(`Checksum: ${checksummed}`);
 console.log("");
 
+if (checksummed !== address) {
+  console.error("CONTRACT_ADDRESS is not in EIP-55 checksum form.");
+  console.error(`  got:      ${address}`);
+  console.error(`  expected: ${checksummed}`);
+  console.error("");
+  console.error("Studionet resolves a contract by the address string: the all-lowercase form");
+  console.error('answers "Contract 0x… not found" for a contract that exists. Copy the address');
+  console.error("exactly as the deploy printed it.");
+  process.exit(1);
+}
+
 const probes = [
-  { label: "ours / lowercase / default", to: address, options: {} },
-  { label: "ours / checksummed / default", to: checksummed, options: {} },
-  {
-    label: "ours / lowercase / latest-final",
-    to: address,
-    options: { transactionHashVariant: "latest-final" },
-  },
-  {
-    label: "ours / checksummed / latest-final",
-    to: checksummed,
-    options: { transactionHashVariant: "latest-final" },
-  },
-  {
-    label: "ours / checksummed / latest-nonfinal",
-    to: checksummed,
-    options: { transactionHashVariant: "latest-nonfinal" },
-  },
-  { label: "control (GentTrophy) / default", to: CONTROL_ADDRESS, options: {}, control: true },
+  { label: "default", options: {} },
+  { label: "latest-final", options: { transactionHashVariant: "latest-final" } },
+  { label: "latest-nonfinal", options: { transactionHashVariant: "latest-nonfinal" } },
 ];
 
 const results = [];
@@ -83,13 +80,13 @@ for (const probe of probes) {
   try {
     const client = createClient({ chain });
     const value = await client.readContract({
-      address: probe.to,
-      functionName: probe.control ? CONTROL_METHOD : "get_pledge_count",
+      address,
+      functionName: "get_pledge_count",
       args: [],
       ...probe.options,
     });
     results.push({ ...probe, ok: true });
-    console.log(`OK    ${probe.label}: ${String(value)}`);
+    console.log(`OK    ${probe.label}: ${String(value)} pledge(s)`);
   } catch (error) {
     const message = (error instanceof Error ? error.message : String(error))
       .split("\n")
@@ -100,23 +97,36 @@ for (const probe of probes) {
   }
 }
 
+let controlWorks = false;
+try {
+  const client = createClient({ chain });
+  await client.readContract({
+    address: CONTROL_ADDRESS,
+    functionName: CONTROL_METHOD,
+    args: [],
+  });
+  controlWorks = true;
+  console.log("OK    control (GenTrophy)");
+} catch (error) {
+  const message = (error instanceof Error ? error.message : String(error)).split("\n")[0];
+  console.log(`FAIL  control (GenTrophy): ${message}`);
+}
+
 console.log("");
 
-const ourAddressWorks = results.some((r) => !r.control && r.ok);
-const controlWorks = results.some((r) => r.control && r.ok);
-
-if (ourAddressWorks) {
-  console.log("The pinned contract is readable. Use the options from the first passing probe.");
+if (results.some((result) => result.ok)) {
+  const working = results.filter((result) => result.ok).map((result) => result.label);
+  console.log(`The pinned contract is readable (${working.join(", ")}).`);
   process.exit(0);
 }
 
 if (controlWorks) {
-  console.error("Our address fails every read, while a control contract on the same chain reads");
-  console.error("fine, so the address pinned in lib/config.ts is not on this chain.");
-  console.error("Deploy again (Actions -> On-chain checks) and pin the address that run prints.");
+  console.error("Our address fails every read while a control contract on the same chain reads");
+  console.error("fine, so the pinned address is not on this chain any more. Deploy again");
+  console.error("(Actions -> On-chain checks) and pin the address that run prints.");
 } else {
-  console.error("Neither our contract nor the control contract can be read, so the problem is in");
-  console.error("the read path or the node, not in our address. Do not re-pin anything yet.");
+  console.error("Neither our contract nor the control contract can be read, so the read path or");
+  console.error("the node is at fault. Do not re-pin anything yet.");
 }
 
 process.exit(1);

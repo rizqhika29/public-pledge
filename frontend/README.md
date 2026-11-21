@@ -15,7 +15,9 @@ Nothing to set up beyond `npm install`: the network and the contract address are
 One network, one contract, no configuration. `lib/config.ts` holds both as constants compiled into the build:
 
 - Network: `studionet` (chain id 61999).
-- Contract: `0xff8764165dc3d35afe8faf7f5b1bc57bc155c798`, the deployment the on-chain suite in the repository root passed against.
+- Contract: `0xfF8764165DC3D35AFe8faF7f5B1bC57bc155c798`, the deployment the on-chain suite in the repository root passed against.
+
+That address must stay EIP-55 checksummed, exactly as the deploy printed it. Studionet resolves a contract by the address string, so the same address in all lowercase answers `Contract 0x… not found` to every read, even though the contract is live. `npm run check:contract` fails the build if the casing is wrong or the contract cannot be read.
 
 There is no environment variable, no runtime switch and no fallback chain, so every visitor reads and writes the same contract, and every value shown in the UI is read from it. Changing either means editing `lib/config.ts` and rebuilding.
 

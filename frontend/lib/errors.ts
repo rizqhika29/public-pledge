@@ -199,14 +199,14 @@ export function describeError(error: unknown): UserFacingError {
   if (lower.includes("pledge not found")) {
     return { kind: "contract", title: "Pledge not found", message: "No pledge exists with that id." };
   }
-  // Studionet is a devnet: when it is reset, every deployed contract disappears
-  // and the RPC answers "Contract 0x... not found" for the pinned address.
+  // Studionet resolves a contract by the address string, so a mis-cased address
+  // answers "Contract 0x… not found" for a contract that does exist.
   if (lower.includes("contract") && lower.includes("not found")) {
     return {
       kind: "contract",
-      title: "This contract is not on the network",
+      title: "The contract address was not resolved",
       message:
-        "The address this build points at does not exist on the chain, which usually means the devnet was reset. The contract has to be deployed again and the site rebuilt with the new address.",
+        "The network could not look up this contract at the address in this build. That happens when the address is written all lowercase instead of in its EIP-55 checksummed form, or when the contract is no longer on the chain.",
     };
   }
 

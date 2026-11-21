@@ -85,7 +85,9 @@ npx playwright install chromium   # once, for the browser tests
 npm run test:e2e               # 5 Chromium tests, closed wallet, no network
 ```
 
-One deployment, one contract, nothing to configure. `frontend/lib/config.ts` pins the network (`studionet`, chain id 61999) and the contract address (`0xff8764165dc3d35afe8faf7f5b1bc57bc155c798`) as constants compiled into the build, so every visitor reads and writes the same contract. There is no environment variable, no runtime switch and no fallback chain, and every number the UI shows comes from the chain. Moving to a new deployment means editing that constant and rebuilding.
+One deployment, one contract, nothing to configure. `frontend/lib/config.ts` pins the network (`studionet`, chain id 61999) and the contract address (`0xfF8764165DC3D35AFe8faF7f5B1bC57bc155c798`) as constants compiled into the build, so every visitor reads and writes the same contract. There is no environment variable, no runtime switch and no fallback chain, and every number the UI shows comes from the chain. Moving to a new deployment means editing that constant and rebuilding.
+
+Keep that address in the EIP-55 checksummed form the deploy printed. Studionet resolves a contract by the address *string*: written in all lowercase, the same live contract answers `Contract 0x… not found` to every read. CI enforces the casing with `npm run check:contract`, which reads `get_pledge_count` through the app's own SDK before a build ships.
 
 Pages: landing (`/`), how it works (`/how-it-works`), pledge list (`/pledges`), pledge detail and consensus result (`/pledges/[id]`), create (`/create`), account and withdrawal (`/account`).
 
