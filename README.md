@@ -85,7 +85,7 @@ npx playwright install chromium   # once, for the browser tests
 npm run test:e2e               # 5 Chromium tests, closed wallet, no network
 ```
 
-It works with no configuration: with `NEXT_PUBLIC_CONTRACT_ADDRESS` unset it talks to the Studionet contract the on-chain workflow last deployed (`0x945ebf6cb2109ed732318019b2fc9d1513ab2f54` at the time of writing, recorded in `frontend/lib/config.ts`). Set the variable to override it, which Localnet requires.
+It works with no configuration: with `NEXT_PUBLIC_CONTRACT_ADDRESS` unset it talks to the Studionet contract the on-chain workflow last deployed (`0xff8764165dc3d35afe8faf7f5b1bc57bc155c798` at the time of writing, recorded in `frontend/lib/config.ts`). Set the variable to override it, which Localnet requires.
 
 Pages: landing (`/`), how it works (`/how-it-works`), pledge list (`/pledges`), pledge detail and consensus result (`/pledges/[id]`), create (`/create`), account and withdrawal (`/account`).
 

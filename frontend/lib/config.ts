@@ -33,7 +33,7 @@ export const FAUCET: Record<NetworkKey, { label: string; url: string }> = {
 // own contract and any fixed address would be wrong.
 // Lowercase on purpose: an all-lowercase address is always valid, while a
 // mixed-case one is only valid if its EIP-55 checksum is correct.
-const DEPLOYED_ON_STUDIONET = "0x945ebf6cb2109ed732318019b2fc9d1513ab2f54";
+const DEPLOYED_ON_STUDIONET = "0xff8764165dc3d35afe8faf7f5b1bc57bc155c798";
 
 const CONTRACT_FALLBACK: Record<NetworkKey, string> = {
   studionet: DEPLOYED_ON_STUDIONET,
