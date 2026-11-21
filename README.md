@@ -6,7 +6,7 @@ Public commitments staked on GenLayer. Someone writes a promise in plain languag
 - Promise broken: the stake can be claimed by the beneficiary the owner named up front.
 - Evidence unreadable or ambiguous: the pledge stays open, and after a grace period the owner can take the stake back.
 
-Status: **contract + direct-mode tests + Next.js frontend**. CI is green for contract lint, 49 direct-mode tests, and the frontend build and typecheck. The on-chain suite exists and runs against Studionet (see below); the frontend has not been tried in a browser with a real wallet yet.
+Status: **contract + direct-mode tests + Next.js frontend**, all green in CI: contract lint, 49 direct-mode tests, the frontend build and typecheck, and 19 on-chain tests against Studionet with real validators and a real LLM. The frontend has not been tried in a browser with a real wallet yet.
 
 ## Lifecycle
 
@@ -96,10 +96,11 @@ Design notes:
 
 ## What has not been verified
 
-CI runs contract lint, direct-mode tests (web and LLM mocked), and the frontend build and typecheck. The on-chain suite lives in `tests/integration/` and runs through its own workflow (next section).
+CI runs contract lint, direct-mode tests (web and LLM mocked), the frontend build and typecheck, and the on-chain suite described in the next section.
 
-- **Real validator consensus and a real LLM.** Direct mode uses mocked data. How real validators judge evidence only shows up in the on-chain run.
-- **The frontend in a browser.** Wallet connect, network switching, and the transaction dialog have not been exercised with a real wallet.
+- **The frontend in a browser.** Wallet connect, network switching and the transaction dialog have not been exercised with a real wallet.
+- **GEN actually landing in a wallet.** The keep-path test proves `withdraw` is accepted and that the `claimable` balance is zeroed. It does not read the recipient's account balance, so a delayed external transfer would not show up.
+- **Stability across runs.** Verdicts come from a real model, so a borderline case can be judged differently from one run to the next. What the suite pins down is the list of things that must never happen, at the end of the on-chain section.
 
 ## On-chain tests (Studionet)
 
