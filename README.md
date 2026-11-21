@@ -85,7 +85,7 @@ npx playwright install chromium   # once, for the browser tests
 npm run test:e2e               # 5 Chromium tests, closed wallet, no network
 ```
 
-It works with no configuration: with `NEXT_PUBLIC_CONTRACT_ADDRESS` unset it talks to the Studionet contract the on-chain workflow last deployed (`0xff8764165dc3d35afe8faf7f5b1bc57bc155c798` at the time of writing, recorded in `frontend/lib/config.ts`). Set the variable to override it, which Localnet requires.
+One deployment, one contract, nothing to configure. `frontend/lib/config.ts` pins the network (`studionet`, chain id 61999) and the contract address (`0xff8764165dc3d35afe8faf7f5b1bc57bc155c798`) as constants compiled into the build, so every visitor reads and writes the same contract. There is no environment variable, no runtime switch and no fallback chain, and every number the UI shows comes from the chain. Moving to a new deployment means editing that constant and rebuilding.
 
 Pages: landing (`/`), how it works (`/how-it-works`), pledge list (`/pledges`), pledge detail and consensus result (`/pledges/[id]`), create (`/create`), account and withdrawal (`/account`).
 
@@ -104,12 +104,9 @@ The app has no server of its own: every read and write goes from the visitor's b
 1. Import the repository at [vercel.com/new](https://vercel.com/new).
 2. Set **Root Directory** to `frontend`. Vercel then detects Next.js and runs `next build`; `frontend/vercel.json` only pins the framework explicitly.
 3. Keep Node 22 (pinned in `frontend/package.json` under `engines`). CI already builds this app on Node 22.
-4. Environment variables are optional, because `frontend/lib/config.ts` falls back to the Studionet deployment:
-   - `NEXT_PUBLIC_CONTRACT_ADDRESS` — point the app at another deployment.
-   - `NEXT_PUBLIC_GENLAYER_NETWORK` — `studionet` (default) or `localnet`.
-5. Deploy.
+4. Deploy. There is nothing to configure: the network and the contract address are compiled into the build.
 
-Both variables are inlined at build time (`NEXT_PUBLIC_*`), so changing one needs a redeploy, not a restart. `frontend/.env.local` is gitignored and never uploaded; set the values in the Vercel project settings instead.
+Do not add `NEXT_PUBLIC_*` variables in the Vercel project. This app reads none, so a value set there changes nothing and only looks like working configuration.
 
 One thing worth doing before the first deploy: the repository has no `package-lock.json`, so `npm install` resolves the semver ranges fresh on every build. Run `npm install` once inside `frontend/` and commit the lockfile; CI and Vercel then build the exact same versions.
 

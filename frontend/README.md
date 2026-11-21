@@ -8,20 +8,20 @@ npm run dev                    # http://localhost:3000
 npm run build && npm run typecheck
 ```
 
-`.env.local` is optional: with no configuration at all the app talks to the contract the on-chain workflow last deployed on Studionet. Copy `.env.example` to `.env.local` only to point it somewhere else.
+Nothing to set up beyond `npm install`: the network and the contract address are compiled in (see below).
 
-## Configuration
+## Deployment target
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `NEXT_PUBLIC_GENLAYER_NETWORK` | `studionet` | `studionet` or `localnet`. Bradbury needs SDK v2 and is not offered. |
-| `NEXT_PUBLIC_CONTRACT_ADDRESS` | the Studionet deployment in `lib/config.ts` | Address of the contract to use. On `localnet` there is no fallback, so it must be set to your own deployment. |
+One network, one contract, no configuration. `lib/config.ts` holds both as constants compiled into the build:
 
-Both are read at build time, so a change needs a restart.
+- Network: `studionet` (chain id 61999).
+- Contract: `0xff8764165dc3d35afe8faf7f5b1bc57bc155c798`, the deployment the on-chain suite in the repository root passed against.
+
+There is no environment variable, no runtime switch and no fallback chain, so every visitor reads and writes the same contract, and every value shown in the UI is read from it. Changing either means editing `lib/config.ts` and rebuilding.
 
 ## Deploying
 
-Set the Vercel project's **Root Directory** to `frontend`; the repository root is not a Next.js app. `vercel.json` pins the framework, `package.json` pins Node 22 under `engines`, and no environment variable is required because `lib/config.ts` falls back to the Studionet deployment. `NEXT_PUBLIC_*` values are inlined at build time, so changing one means redeploying.
+Set the Vercel project's **Root Directory** to `frontend`; the repository root is not a Next.js app. `vercel.json` pins the framework and `package.json` pins Node 22 under `engines`. Nothing else is needed — do not add environment variables, because the app reads none.
 
 ## Tests
 

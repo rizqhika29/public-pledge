@@ -41,7 +41,7 @@ export class WrongNetworkError extends Error {
 
 export class NoContractError extends Error {
   constructor() {
-    super("No contract address is configured. Set NEXT_PUBLIC_CONTRACT_ADDRESS and restart the app.");
+    super("This build has no valid contract address. It is compiled in from lib/config.ts, so the frontend needs rebuilding.");
     this.name = "NoContractError";
   }
 }

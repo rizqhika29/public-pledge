@@ -39,18 +39,17 @@ export function NetworkBanner() {
   );
 }
 
-/** Shown on app pages when no contract address was configured at build time. */
+/** Defensive only: the address is compiled in, so a released build never shows this. */
 export function ConfigNotice() {
   if (HAS_CONTRACT) return null;
   return (
     <div className="flex gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
       <Info className="mt-0.5 h-5 w-5 shrink-0" aria-hidden />
       <div>
-        <p className="font-medium">No contract is configured yet.</p>
+        <p className="font-medium">This build has no valid contract address.</p>
         <p className="mt-1 text-amber-100/80">
-          Deploy <code className="rounded bg-black/30 px-1">contracts/public_pledge.py</code> to {NETWORK_LABEL[NETWORK_KEY]}, then set{" "}
-          <code className="rounded bg-black/30 px-1">NEXT_PUBLIC_CONTRACT_ADDRESS</code> in <code className="rounded bg-black/30 px-1">frontend/.env.local</code> and
-          restart the app. Need test GEN? Use the{" "}
+          The address is compiled in from <code className="rounded bg-black/30 px-1">lib/config.ts</code> and points at the PublicPledge contract on{" "}
+          {NETWORK_LABEL[NETWORK_KEY]}. Rebuild the frontend with a valid address; this screen should never appear on a released build. Need test GEN? Use the{" "}
           <a className="underline underline-offset-2" href={FAUCET[NETWORK_KEY].url} target="_blank" rel="noopener noreferrer">
             {FAUCET[NETWORK_KEY].label}
           </a>

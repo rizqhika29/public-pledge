@@ -1,20 +1,23 @@
 // Plain, dependency-free configuration. Safe to import from server and client code.
+//
+// This app is built for exactly one deployment, and it reads no runtime value for
+// it: the network and the contract address below are constants compiled into the
+// bundle. Every visitor talks to the same contract, there is no environment
+// variable to set, and there is nothing to point elsewhere at runtime.
 
-// Only networks the pinned SDK (genlayer-js 1.1.8) supports end to end.
-// Testnet Bradbury (Phase 2) needs the v2 SDK, so it is intentionally not offered here.
+/** Networks this codebase can describe. The shipped build is pinned to Studionet. */
 export type NetworkKey = "localnet" | "studionet";
-
-const NETWORK_KEYS: readonly NetworkKey[] = ["localnet", "studionet"];
-
-function resolveNetwork(value: string | undefined): NetworkKey {
-  const v = (value ?? "").trim();
-  return (NETWORK_KEYS as readonly string[]).includes(v) ? (v as NetworkKey) : "studionet";
-}
 
 export const APP_NAME = "Public Pledge";
 export const DOCS_URL = "https://docs.genlayer.com";
 
-export const NETWORK_KEY: NetworkKey = resolveNetwork(process.env.NEXT_PUBLIC_GENLAYER_NETWORK);
+/**
+ * The one network the app talks to. Bradbury is not offered: it needs the v2 SDK.
+ *
+ * The `localnet` label and faucet stay in the maps below only so those lookups
+ * type-check; the shipped build never resolves to them.
+ */
+export const NETWORK_KEY: NetworkKey = "studionet";
 
 export const NETWORK_LABEL: Record<NetworkKey, string> = {
   localnet: "Localnet",
@@ -26,21 +29,18 @@ export const FAUCET: Record<NetworkKey, { label: string; url: string }> = {
   studionet: { label: "Studio faucet", url: "https://studio.genlayer.com" },
 };
 
-// The contract the on-chain workflow last deployed to Studionet
-// (.github/workflows/onchain.yml prints it in the job summary). It is a default
-// only, so `npm run dev` works with no setup at all: NEXT_PUBLIC_CONTRACT_ADDRESS
-// always wins. Localnet has no fallback, because there each user deploys their
-// own contract and any fixed address would be wrong.
-// Lowercase on purpose: an all-lowercase address is always valid, while a
-// mixed-case one is only valid if its EIP-55 checksum is correct.
-const DEPLOYED_ON_STUDIONET = "0xff8764165dc3d35afe8faf7f5b1bc57bc155c798";
+/**
+ * The PublicPledge contract this app is built against.
+ *
+ * Deployed on Studionet (chain id 61999) by `.github/workflows/onchain.yml`, and
+ * the same run's on-chain suite passed against it, so the frontend and the tests
+ * agree on one contract. Lowercase on purpose: an all-lowercase address is always
+ * valid, while a mixed-case one is only valid if its EIP-55 checksum is correct.
+ *
+ * To move to a new deployment, change this constant and rebuild. It is
+ * deliberately not an environment variable: everyone should be on the same one.
+ */
+export const CONTRACT_ADDRESS = "0xff8764165dc3d35afe8faf7f5b1bc57bc155c798";
 
-const CONTRACT_FALLBACK: Record<NetworkKey, string> = {
-  studionet: DEPLOYED_ON_STUDIONET,
-  localnet: "",
-};
-
-const CONFIGURED_CONTRACT = (process.env.NEXT_PUBLIC_CONTRACT_ADDRESS ?? "").trim();
-
-export const CONTRACT_ADDRESS = CONFIGURED_CONTRACT || CONTRACT_FALLBACK[NETWORK_KEY];
+/** Guard for a malformed edit above; a released build always passes it. */
 export const HAS_CONTRACT = /^0x[0-9a-fA-F]{40}$/.test(CONTRACT_ADDRESS);
