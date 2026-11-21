@@ -16,7 +16,9 @@ const source = fs.readFileSync(configPath, "utf8");
 
 /** Read a string constant out of lib/config.ts, so this checks the shipped value. */
 function constant(name) {
-  const match = new RegExp(`export const ${name} = "([^"]+)"`).exec(source);
+  // The constant may carry a type annotation, e.g. `NETWORK_KEY: NetworkKey = "studionet"`.
+  const pattern = new RegExp(`export const ${name}\\s*(?::[^=]+)?=\\s*"([^"]+)"`);
+  const match = pattern.exec(source);
   if (!match) throw new Error(`${name} was not found in lib/config.ts`);
   return match[1];
 }

@@ -199,6 +199,16 @@ export function describeError(error: unknown): UserFacingError {
   if (lower.includes("pledge not found")) {
     return { kind: "contract", title: "Pledge not found", message: "No pledge exists with that id." };
   }
+  // Studionet is a devnet: when it is reset, every deployed contract disappears
+  // and the RPC answers "Contract 0x... not found" for the pinned address.
+  if (lower.includes("contract") && lower.includes("not found")) {
+    return {
+      kind: "contract",
+      title: "This contract is not on the network",
+      message:
+        "The address this build points at does not exist on the chain, which usually means the devnet was reset. The contract has to be deployed again and the site rebuilt with the new address.",
+    };
+  }
 
   const short = text.length > 240 ? `${text.slice(0, 237)}…` : text;
   return { kind: "unknown", title: "Something went wrong", message: short || "An unexpected error occurred." };
