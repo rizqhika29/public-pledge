@@ -1,0 +1,66 @@
+name: Frontend lockfile
+
+# While the repository has no lockfile, every Vercel build resolves the semver
+# ranges in frontend/package.json from scratch, so a deploy can use versions CI
+# never tested. This workflow installs the frontend on the same platform Vercel
+# builds on and commits the lockfile that install produces.
+#
+# Manual by default. It also runs when frontend/package.json changes on main, so
+# the lockfile cannot silently fall behind the manifest.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/lockfile.yml"
+      - "frontend/package.json"
+
+permissions:
+  contents: write
+
+jobs:
+  lockfile:
+    name: Generate and commit the lockfile
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # A full install, not --package-lock-only: resolving on the Linux runner
+      # records the platform-specific optional dependencies that a build here and
+      # on Vercel actually needs.
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      # Never commit a lockfile that cannot build the app.
+      - name: Build with those versions
+        run: npm run build
+
+      - name: Commit the lockfile
+        working-directory: .
+        run: |
+          set -euo pipefail
+
+          if [ -z "$(git status --porcelain frontend/package-lock.json)" ]; then
+            echo "frontend/package-lock.json is already up to date." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/package-lock.json
+          git commit -m "Pin frontend dependency versions"
+          git push
+
+          {
+            echo "Committed frontend/package-lock.json."
+            echo ""
+            echo "From now on \`npm ci\` installs exactly these versions."
+          } >> "$GITHUB_STEP_SUMMARY"
