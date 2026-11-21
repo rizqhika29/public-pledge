@@ -162,3 +162,27 @@ def test_validator_rejects_non_external_leader_error(
 
     # An arbitrary leader failure (not an evidence-source error) forces rotation.
     assert direct_vm.run_validator(leader_error=ValueError("timeout")) is False
+
+
+def test_validator_agrees_when_its_own_output_is_ungrounded(
+    pledge, direct_vm, direct_alice, direct_bob
+):
+    """Both sides failing to ground a quote is an honest agreement on `inconclusive`.
+
+    The leader only proposes `inconclusive` when its own answer could not be
+    grounded, so a validator whose answer cannot be grounded either has nothing
+    to contradict. Disagreeing here is what used to leave the pledge with no
+    record at all.
+    """
+    _judged(pledge, direct_vm, direct_alice, direct_bob, "kept")
+
+    direct_vm.clear_mocks()
+    mock_evidence(direct_vm)
+    mock_verdict(direct_vm, "kept", quote="A passage that is not on the page at all")
+
+    proposed = {
+        "verdict": "inconclusive",
+        "reason": "The model evidence quote was not found in the page.",
+        "quote": "",
+    }
+    assert direct_vm.run_validator(leader_result=proposed) is True

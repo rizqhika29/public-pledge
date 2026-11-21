@@ -316,6 +316,10 @@ def test_unmet_criteria_never_pays_the_owner(contract, beneficiary):
 
     pledge = _read(contract, "get_pledge", [pid])
     print(f"verdict={pledge['status']} note={pledge['note']!r}")
+    # The model must not be able to leave this pledge without any record: an
+    # ungrounded or unusable answer is stored as `inconclusive`, which is what
+    # keeps the refund path open afterwards.
+    assert int(pledge["checks"]) >= 1, "judgment left no record"
     assert pledge["status"] != "kept", "unsatisfiable criteria were judged as kept"
     assert int(_read(contract, "get_claimable", [owner])) == claimable_before
 

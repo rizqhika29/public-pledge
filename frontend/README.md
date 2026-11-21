@@ -58,7 +58,7 @@ Several extensions inject `window.ethereum` and overwrite each other. That is wh
 - Typed errors first: `WalletBusyError`, `NotConnectedError`, `WrongNetworkError`, `NoContractError`, `TxFailedError`.
 - Then wallet codes, read from **every** nested `code` the wallet wrapped (`data.originalError.code` and friends), because wallets do not agree where to put them: `4001`/`5000` user rejected, `-32002` request already pending, `4900`/`4901` disconnected, `4200`/`-32601` unsupported method.
 - Then message matching: insufficient funds, network unreachable.
-- Contract errors carry a tag (`[EXPECTED]`, `[EXTERNAL]`, `[LLM_ERROR]`); each becomes a specific sentence, e.g. an unreachable evidence page rather than a raw trace.
+- Contract errors carry a tag (`[EXPECTED]`, `[EXTERNAL]`), which becomes a specific sentence rather than a raw trace. Model-quality problems are not errors: the contract records them as an `inconclusive` verdict, so they arrive as a result and not as a failed transaction.
 
 ## Files worth knowing
 

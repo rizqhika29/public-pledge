@@ -36,11 +36,10 @@ MIN_QUOTE_CHARS = 24
 MAX_EVIDENCE_CHARS = 12000
 MAX_PAGE_SIZE = 50
 
-# Error classes. `[LLM_ERROR]` marks model output that validators must not agree
-# with, so the leader gets rotated instead of the bad answer being accepted.
 # `[EXPECTED]` marks business-rule violations raised by the contract itself.
+# Model-quality problems are deliberately NOT errors: they become an
+# `inconclusive` record, so `judge` can never revert and lock a stake.
 EXPECTED = "[EXPECTED]"
-LLM_ERROR = "[LLM_ERROR]"
 
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
@@ -84,42 +83,54 @@ def _norm(text: str) -> str:
     return " ".join(str(text).lower().split())
 
 
+def _unusable(why: str) -> dict:
+    """The honest answer when the model's reply cannot be used as evidence.
+
+    `judge` must never revert because of model quality. A revert writes nothing,
+    and a pledge with no recorded judgement can never be refunded either, so a
+    model that kept misbehaving would lock the stake forever. An unusable reply
+    therefore becomes `inconclusive`: it is recorded for audit, it pays nobody,
+    and it leaves the refund path open. A payout still needs a verdict that every
+    validator can reproduce from a quote it can find itself.
+    """
+    return {"verdict": "inconclusive", "reason": why[:MAX_REASON_CHARS], "quote": ""}
+
+
 def _parse_verdict(raw, body: str) -> dict:
     """Normalise the model reply into {"verdict", "reason", "quote"}.
 
     A conclusive verdict must carry a verbatim quote from the evidence, and that
-    quote must actually occur in the page this node fetched. That keeps the
-    stored reasoning grounded instead of trusting the model's own assurance.
+    quote must actually occur in the page this node fetched. Anything unusable
+    degrades to `inconclusive` instead of raising, so the caller always gets an
+    answer and no caller can ever pay out on an ungrounded one.
     """
     if isinstance(raw, str):
         text = raw.replace("```json", "").replace("```", "").strip()
         start, end = text.find("{"), text.rfind("}") + 1
         if start < 0 or end <= start:
-            raise gl.vm.UserError(f"{LLM_ERROR} no JSON object in model output")
+            return _unusable("The model reply contained no JSON object.")
         try:
             raw = json.loads(text[start:end])
         except ValueError:
-            raise gl.vm.UserError(f"{LLM_ERROR} model output is not valid JSON")
+            return _unusable("The model reply was not valid JSON.")
 
     if not isinstance(raw, dict):
-        raise gl.vm.UserError(f"{LLM_ERROR} model output is not a JSON object")
+        return _unusable("The model reply was not a JSON object.")
 
     verdict = str(raw.get("verdict", "")).strip().lower()
     if verdict not in VERDICTS:
-        raise gl.vm.UserError(f"{LLM_ERROR} unknown verdict '{verdict}'")
+        return _unusable("The model reply named an unknown verdict.")
 
     reason = " ".join(str(raw.get("reason", "")).split())[:MAX_REASON_CHARS]
     quote = " ".join(str(raw.get("quote", "")).split())[:MAX_QUOTE_CHARS]
 
     if verdict == "inconclusive":
-        quote = ""
-    else:
-        if len(quote) < MIN_QUOTE_CHARS:
-            raise gl.vm.UserError(
-                f"{LLM_ERROR} conclusive verdict without an evidence quote"
-            )
-        if _norm(quote) not in _norm(body):
-            raise gl.vm.UserError(f"{LLM_ERROR} evidence quote not found in the page")
+        return {"verdict": "inconclusive", "reason": reason, "quote": ""}
+
+    if len(quote) < MIN_QUOTE_CHARS:
+        return _unusable("The model verdict came without an evidence quote.")
+    if _norm(quote) not in _norm(body):
+        return _unusable("The model evidence quote was not found in the page.")
 
     return {"verdict": verdict, "reason": reason, "quote": quote}
 
@@ -144,10 +155,29 @@ Rules:
 - "broken": the evidence clearly shows it was not fulfilled, or it was fulfilled after the deadline.
 - "inconclusive": the evidence is missing, unrelated, ambiguous or unreadable. When in doubt, answer "inconclusive".
 
-For "kept" and "broken" you must also copy one short passage from the evidence that decides the verdict into "quote". Copy the characters exactly as they appear; do not paraphrase, translate or reformat. For "inconclusive", "quote" must be an empty string.
+For "kept" and "broken" you must also copy one short passage from the evidence that decides the verdict into "quote". Copy the characters exactly as they appear; do not paraphrase, translate or reformat. Another reader must be able to find your quote in the page. If you cannot copy such a passage exactly, answer "inconclusive". For "inconclusive", "quote" must be an empty string.
 
 Respond with JSON only, exactly in this shape:
 {{"verdict": "kept" | "broken" | "inconclusive", "reason": "<one short sentence>", "quote": "<verbatim passage from the evidence, or empty>"}}"""
+
+
+def _ask_model(
+    promise: str, criteria: str, evidence_url: str, deadline: int, body: str
+) -> dict:
+    """Ask the model about the evidence. Never raises because of model quality.
+
+    Leader and validator both go through this exact function, so an unreachable
+    or unusable model produces the same `inconclusive` answer on both sides
+    instead of a disagreement that would rotate leaders forever.
+    """
+    try:
+        raw = gl.nondet.exec_prompt(
+            _build_prompt(promise, criteria, evidence_url, deadline, body),
+            response_format="json",
+        )
+    except Exception:
+        return _unusable("The model could not be reached.")
+    return _parse_verdict(raw, body)
 
 
 def _fetch_evidence(evidence_url: str):
@@ -165,41 +195,27 @@ def _fetch_evidence(evidence_url: str):
 def _judge_with_validators(
     promise: str, criteria: str, evidence_url: str, deadline: int
 ) -> dict:
-    """Leader fetches the evidence and asks the LLM; validators fetch the same
+    """Leader fetches the evidence and asks the model; validators fetch the same
     page themselves, must reach the same verdict, and must find the leader's
     evidence quote in the page they fetched. The free-text `reason` may differ.
 
-    An unreadable source is reported as `inconclusive` instead of raising, so a
-    dead link leaves an auditable record and can never lock the stake forever.
+    Nothing here raises because of model quality. An unreadable source, an
+    unusable reply and an ungrounded quote all come back as `inconclusive`,
+    which is recorded and pays nobody. A revert would write nothing, and a
+    pledge with no recorded judgement can never be refunded, so a misbehaving
+    model would otherwise lock the stake forever.
     """
 
     def leader_fn() -> dict:
         body, unavailable = _fetch_evidence(evidence_url)
         if unavailable:
-            return {
-                "verdict": "inconclusive",
-                "reason": f"Evidence source unavailable ({unavailable}).",
-                "quote": "",
-            }
-        raw = gl.nondet.exec_prompt(
-            _build_prompt(promise, criteria, evidence_url, deadline, body),
-            response_format="json",
-        )
-        return _parse_verdict(raw, body)
+            return _unusable(f"Evidence source unavailable ({unavailable}).")
+        return _ask_model(promise, criteria, evidence_url, deadline, body)
 
     def validator_fn(leaders_res) -> bool:
         if not isinstance(leaders_res, gl.vm.Return):
-            # The leader's model output was unusable. Agree only if ours is
-            # unusable in exactly the same way; otherwise rotate the leader.
-            leader_msg = getattr(leaders_res, "message", "") or ""
-            if not leader_msg.startswith(LLM_ERROR):
-                return False
-            try:
-                leader_fn()
-            except gl.vm.UserError as e:
-                return e.message == leader_msg
-            except Exception:
-                return False
+            # The leader crashed without producing a result, so there is nothing
+            # to compare against. Rotate it.
             return False
 
         leader = leaders_res.calldata
@@ -220,11 +236,7 @@ def _judge_with_validators(
             if len(quote) < MIN_QUOTE_CHARS or quote not in _norm(body):
                 return False
 
-        raw = gl.nondet.exec_prompt(
-            _build_prompt(promise, criteria, evidence_url, deadline, body),
-            response_format="json",
-        )
-        mine = _parse_verdict(raw, body)
+        mine = _ask_model(promise, criteria, evidence_url, deadline, body)
         return mine["verdict"] == leader["verdict"]
 
     return gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
