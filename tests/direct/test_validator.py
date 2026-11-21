@@ -102,7 +102,7 @@ def test_validator_rejects_leader_without_quote(
     assert direct_vm.run_validator(leader_result=forged) is False
 
 
-def test_validator_rejects_when_it_cannot_read_the_evidence(
+def test_validator_rejects_conclusive_verdict_when_it_cannot_read_the_evidence(
     pledge, direct_vm, direct_alice, direct_bob
 ):
     """If our own fetch fails, nothing the leader claims about the page stands."""
@@ -114,6 +114,45 @@ def test_validator_rejects_when_it_cannot_read_the_evidence(
 
     forged = {"verdict": "kept", "reason": "trust me", "quote": DEFAULT_QUOTE}
     assert direct_vm.run_validator(leader_result=forged) is False
+
+
+def test_validator_agrees_when_it_cannot_read_the_evidence_either(
+    pledge, direct_vm, direct_alice, direct_bob
+):
+    """Both sides failing to read the source is a real agreement on `inconclusive`.
+
+    The leader proposes `inconclusive` only when its own fetch failed, so a
+    validator that fails the same way has nothing to contradict. Without this
+    branch leader and validators never agree on a dead link, and the record the
+    refund path depends on is never written.
+
+    No LLM mock is registered on purpose: this branch must not consult the model.
+    """
+    _judged(pledge, direct_vm, direct_alice, direct_bob, "kept")
+
+    direct_vm.clear_mocks()
+    mock_evidence(direct_vm, status=503, body="down")
+
+    proposed = {
+        "verdict": "inconclusive",
+        "reason": "Evidence source unavailable (HTTP 503).",
+        "quote": "",
+    }
+    assert direct_vm.run_validator(leader_result=proposed) is True
+
+
+def test_validator_rejects_inconclusive_when_it_can_read_the_page(
+    pledge, direct_vm, direct_alice, direct_bob
+):
+    """A readable page that decides the pledge may not pass as `inconclusive`."""
+    _judged(pledge, direct_vm, direct_alice, direct_bob, "kept")
+
+    direct_vm.clear_mocks()
+    mock_evidence(direct_vm)
+    mock_verdict(direct_vm, "kept")
+
+    proposed = {"verdict": "inconclusive", "reason": "Could not tell.", "quote": ""}
+    assert direct_vm.run_validator(leader_result=proposed) is False
 
 
 def test_validator_rejects_non_external_leader_error(

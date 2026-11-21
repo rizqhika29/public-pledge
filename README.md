@@ -29,7 +29,7 @@ Settlement uses a pull pattern (`claimable` + `withdraw`). A verdict can never g
 - The leader fetches `evidence_url`, truncates it (12,000 characters), and asks an LLM for `{"verdict", "reason", "quote"}`.
 - Validators fetch the same page **themselves** and re-run the same question. They compare the `verdict`, and they require the leader's `quote` to appear in the page they fetched themselves. The free-text `reason` may differ.
 - A conclusive verdict (`kept` / `broken`) is rejected unless it carries a verbatim quote of at least 24 characters that really occurs in the page. An invented or paraphrased passage fails with `[LLM_ERROR]`.
-- An unreadable evidence source is **recorded as `inconclusive`** rather than reverted, so a dead link leaves an auditable record and can never lock the stake forever.
+- An unreadable evidence source is **recorded as `inconclusive`** rather than reverted, so a dead link leaves an auditable record and can never lock the stake forever. The leader proposes `inconclusive` without asking the model, and a validator agrees with that only when its own fetch fails the same way. If the validator can read the page, the proposal has to survive a real re-judgement.
 - Malformed model output (`[LLM_ERROR]`) is deliberately not agreed to, so the leader gets rotated.
 - All storage writes happen after consensus, outside the non-deterministic block.
 

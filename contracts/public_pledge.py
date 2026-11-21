@@ -208,9 +208,12 @@ def _judge_with_validators(
 
         body, unavailable = _fetch_evidence(evidence_url)
         if unavailable:
-            # We cannot read the evidence, so we cannot confirm a claim about it.
-            return False
+            # We also cannot read the evidence. An `inconclusive` proposal then
+            # agrees with what we see; a conclusive one cannot be confirmed.
+            return leader["verdict"] == "inconclusive"
 
+        # Here we can read the page, so an `inconclusive` proposal must be
+        # justified by us too: re-judge and compare below.
         # A conclusive verdict must be grounded in text we can see ourselves.
         if leader["verdict"] != "inconclusive":
             quote = _norm(str(leader.get("quote", "")))
