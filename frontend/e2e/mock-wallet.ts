@@ -109,5 +109,6 @@ export async function installMockWallet(
     // Announce once at load and again whenever the app asks (EIP-6963 request).
     window.addEventListener("eip6963:requestProvider", announce);
     announce();
+    (window as unknown as { __mockWalletInstalled: boolean }).__mockWalletInstalled = true;
   }, config);
 }

@@ -26,11 +26,13 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: `npm run dev -- --port ${PORT}`,
+    // A production build, not `next dev`. Dev compiles each route on first
+    // request and hydrates late, so the first click can land on a button whose
+    // handler is not attached yet.
+    command: `npm run build && npm run start -- --port ${PORT}`,
     url: BASE_URL,
     reuseExistingServer: !process.env.CI,
-    // `next dev` compiles on first request, which a cold CI runner does slowly.
-    timeout: 180_000,
+    timeout: 300_000,
     stdout: "pipe",
     stderr: "pipe",
   },

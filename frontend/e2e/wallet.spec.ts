@@ -11,15 +11,47 @@ async function walletCalls(page: Page): Promise<string[]> {
   );
 }
 
+/**
+ * Open the picker and choose the fake wallet.
+ *
+ * Clicking before React hydrates looks like a successful click and does nothing,
+ * so this retries until the picker actually lists the wallet.
+ */
+async function connectMockWallet(page: Page): Promise<void> {
+  const walletButton = page.getByRole("button", { name: MOCK_WALLET });
+
+  await expect(async () => {
+    if (!(await walletButton.isVisible())) {
+      await page.getByRole("button", { name: CONNECT }).click();
+    }
+    await expect(walletButton).toBeVisible({ timeout: 3_000 });
+  }).toPass({ timeout: 30_000 });
+
+  await walletButton.click();
+}
+
 test.beforeEach(async ({ page }) => {
+  // Surface anything the app logs in the browser; a silent page error would
+  // otherwise only show up as a selector timeout.
+  page.on("pageerror", (error) => console.log(`[pageerror] ${error.message}`));
+  page.on("console", (message) => {
+    if (message.type() === "error") console.log(`[console.error] ${message.text()}`);
+  });
+
   // Keep the suite offline and deterministic. Reads are not what these tests
   // cover, and a live Studionet call would make them slow and flaky.
   await page.route("https://studio.genlayer.com/**", (route) => route.abort());
 });
 
-test("the landing page renders and offers a wallet", async ({ page }) => {
+test("the fake wallet is installed and the page renders", async ({ page }) => {
   await installMockWallet(page);
   await page.goto("/");
+
+  // If this is false the init script itself is broken, which would explain every
+  // "wallet never appeared" failure below.
+  await expect
+    .poll(() => page.evaluate(() => Boolean((window as unknown as { __mockWalletInstalled?: boolean }).__mockWalletInstalled)))
+    .toBe(true);
 
   await expect(page).toHaveTitle(/Public Pledge/);
   await expect(page.getByRole("button", { name: CONNECT })).toBeVisible();
@@ -29,8 +61,7 @@ test("connecting talks to the wallet the user picks", async ({ page }) => {
   await installMockWallet(page);
   await page.goto("/");
 
-  await page.getByRole("button", { name: CONNECT }).click();
-  await page.getByRole("button", { name: MOCK_WALLET }).click();
+  await connectMockWallet(page);
 
   await expect(page.getByText(SHORT_ADDRESS)).toBeVisible();
   await expect(page.getByRole("button", { name: CONNECT })).toHaveCount(0);
@@ -45,8 +76,7 @@ test("a dismissed wallet prompt is reported, not swallowed", async ({ page }) =>
   await installMockWallet(page, { rejectConnect: true });
   await page.goto("/");
 
-  await page.getByRole("button", { name: CONNECT }).click();
-  await page.getByRole("button", { name: MOCK_WALLET }).click();
+  await connectMockWallet(page);
 
   await expect(page.getByText("Request cancelled")).toBeVisible();
   // Still disconnected, and the button is usable again.
@@ -57,8 +87,7 @@ test("a wallet on another chain is asked to switch exactly once", async ({ page 
   await installMockWallet(page, { chainId: 1 });
   await page.goto("/");
 
-  await page.getByRole("button", { name: CONNECT }).click();
-  await page.getByRole("button", { name: MOCK_WALLET }).click();
+  await connectMockWallet(page);
 
   const switchButton = page.getByRole("button", { name: /Switch to Studionet/ });
   await expect(switchButton).toBeVisible();
@@ -76,8 +105,7 @@ test("the create form explains what is missing without asking for a signature", 
   await installMockWallet(page);
   await page.goto("/create");
 
-  await page.getByRole("button", { name: CONNECT }).click();
-  await page.getByRole("button", { name: MOCK_WALLET }).click();
+  await connectMockWallet(page);
   await expect(page.getByText(SHORT_ADDRESS)).toBeVisible();
 
   await page.getByRole("button", { name: "Lock stake and create pledge" }).click();

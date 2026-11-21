@@ -72,9 +72,21 @@ jobs:
       # EIP-6963 wallet, and the tests block the GenLayer RPC so they stay offline.
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
+      # Playwright writes an ARIA snapshot of the page for every failure. Printing
+      # it puts the real DOM in the job log instead of just a selector timeout.
+      - name: Show the failure context
+        if: failure()
+        run: |
+          for file in test-results/*/error-context.md; do
+            [ -e "$file" ] || continue
+            echo "===== $file ====="
+            cat "$file"
+          done
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: playwright-report
-          path: frontend/playwright-report
+          path: |
+            frontend/playwright-report
+            frontend/test-results
           retention-days: 7
