@@ -19,6 +19,10 @@ npm run build && npm run typecheck
 
 Both are read at build time, so a change needs a restart.
 
+## Deploying
+
+Set the Vercel project's **Root Directory** to `frontend`; the repository root is not a Next.js app. `vercel.json` pins the framework, `package.json` pins Node 22 under `engines`, and no environment variable is required because `lib/config.ts` falls back to the Studionet deployment. `NEXT_PUBLIC_*` values are inlined at build time, so changing one means redeploying.
+
 ## Tests
 
 ```bash

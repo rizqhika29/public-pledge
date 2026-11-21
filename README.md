@@ -97,6 +97,28 @@ Design notes:
 - **Networks.** Studionet and Localnet. Bradbury needs SDK v2 and is intentionally not offered.
 - **Fees.** SDK 1.1.8 has no fee estimation (that is a v2 API), so the frontend does not send `fees`. That is part of the v2 migration for networks that charge fees.
 
+## Deploy the frontend to Vercel
+
+The app has no server of its own: every read and write goes from the visitor's browser straight to the GenLayer RPC, so a static host is enough. The only thing to get right is that the app is not at the repository root.
+
+1. Import the repository at [vercel.com/new](https://vercel.com/new).
+2. Set **Root Directory** to `frontend`. Vercel then detects Next.js and runs `next build`; `frontend/vercel.json` only pins the framework explicitly.
+3. Keep Node 22 (pinned in `frontend/package.json` under `engines`). CI already builds this app on Node 22.
+4. Environment variables are optional, because `frontend/lib/config.ts` falls back to the Studionet deployment:
+   - `NEXT_PUBLIC_CONTRACT_ADDRESS` — point the app at another deployment.
+   - `NEXT_PUBLIC_GENLAYER_NETWORK` — `studionet` (default) or `localnet`.
+5. Deploy.
+
+Both variables are inlined at build time (`NEXT_PUBLIC_*`), so changing one needs a redeploy, not a restart. `frontend/.env.local` is gitignored and never uploaded; set the values in the Vercel project settings instead.
+
+One thing worth doing before the first deploy: the repository has no `package-lock.json`, so `npm install` resolves the semver ranges fresh on every build. Run `npm install` once inside `frontend/` and commit the lockfile; CI and Vercel then build the exact same versions.
+
+What a hosted deployment means in practice:
+
+- The browser reaches `https://studio.genlayer.com/api` directly, so the site is only as reachable as Studio is. The contract is public on that chain, so no key is needed to read it.
+- Writing still needs the visitor's own wallet on Studionet; the site never holds a key.
+- A custom domain works as usual, and nothing in the app depends on the hostname.
+
 ## What has not been verified
 
 CI runs contract lint, direct-mode tests (web and LLM mocked), the frontend build and typecheck, the Chromium end-to-end tests in `frontend/e2e/`, and the on-chain suite described in the next section.
