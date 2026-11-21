@@ -1,17 +1,24 @@
-// Checks that the contract this frontend is pinned to can be read, and probes
-// which read options work.
+// Checks that the contract this frontend is pinned to can be read, and probes the
+// ways a read can be addressed, because a "Contract <address> not found" answer
+// can come from the address itself or from how the read is issued.
 //
-// The address is compiled into the app, so a failed read only shows up as an RPC
-// error in a browser console. This runs the same SDK against the same chain, and
-// tries each `transactionHashVariant` because a read is evaluated against a
-// transaction snapshot: `latest-nonfinal` and `latest-final` can resolve to
-// different points in the chain's history.
+// The probes are deliberately a matrix rather than a guess:
+//   - our address as pinned (all lowercase) and as an EIP-55 checksum,
+//   - the read evaluated against each transaction snapshot variant,
+//   - a control contract on the same chain, deployed by the same team from
+//     gentrophy, which tells us whether a failure is about this address or
+//     about the read path itself.
 
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { createClient } from "genlayer-js";
 import { localnet, studionet } from "genlayer-js/chains";
+import { getAddress } from "viem";
+
+// GenTrophy on Studionet, read by the same kind of client. Only used as a control.
+const CONTROL_ADDRESS = "0x2C02539A051F62007254abFdFcF0982f0Fa4e7Ec";
+const CONTROL_METHOD = "get_stats";
 
 const configPath = fileURLToPath(new URL("../lib/config.ts", import.meta.url));
 const source = fs.readFileSync(configPath, "utf8");
@@ -36,50 +43,80 @@ if (!/^0x[0-9a-fA-F]{40}$/.test(address)) {
   throw new Error(`CONTRACT_ADDRESS is not a valid address: ${address}`);
 }
 
-const rpc = chain.rpcUrls?.default?.http?.[0] ?? "unknown";
+let checksummed;
+try {
+  checksummed = getAddress(address);
+} catch (error) {
+  throw new Error(`CONTRACT_ADDRESS is not a valid address: ${address} (${String(error)})`);
+}
+
 console.log(`Chain:   ${network} (id ${chain.id})`);
-console.log(`RPC:     ${rpc}`);
+console.log(`RPC:     ${chain.rpcUrls?.default?.http?.[0] ?? "unknown"}`);
 console.log(`Address: ${address}`);
+console.log(`Checksum: ${checksummed}`);
 console.log("");
 
 const probes = [
-  { label: "default (how the app calls it)", options: {} },
-  { label: "latest-nonfinal", options: { transactionHashVariant: "latest-nonfinal" } },
-  { label: "latest-final", options: { transactionHashVariant: "latest-final" } },
+  { label: "ours / lowercase / default", to: address, options: {} },
+  { label: "ours / checksummed / default", to: checksummed, options: {} },
+  {
+    label: "ours / lowercase / latest-final",
+    to: address,
+    options: { transactionHashVariant: "latest-final" },
+  },
+  {
+    label: "ours / checksummed / latest-final",
+    to: checksummed,
+    options: { transactionHashVariant: "latest-final" },
+  },
+  {
+    label: "ours / checksummed / latest-nonfinal",
+    to: checksummed,
+    options: { transactionHashVariant: "latest-nonfinal" },
+  },
+  { label: "control (GentTrophy) / default", to: CONTROL_ADDRESS, options: {}, control: true },
 ];
 
-const failures = [];
+const results = [];
 
 for (const probe of probes) {
   try {
     const client = createClient({ chain });
     const value = await client.readContract({
-      address,
-      functionName: "get_pledge_count",
+      address: probe.to,
+      functionName: probe.control ? CONTROL_METHOD : "get_pledge_count",
       args: [],
       ...probe.options,
     });
-    console.log(`OK    ${probe.label}: ${String(value)} pledge(s)`);
+    results.push({ ...probe, ok: true });
+    console.log(`OK    ${probe.label}: ${String(value)}`);
   } catch (error) {
     const message = (error instanceof Error ? error.message : String(error))
       .split("\n")
       .map((line) => line.trim())
       .filter(Boolean)[0];
-    failures.push({ label: probe.label, message });
+    results.push({ ...probe, ok: false, message });
     console.log(`FAIL  ${probe.label}: ${message}`);
   }
 }
 
 console.log("");
 
-if (failures.length === probes.length) {
-  console.error("No read option could reach the contract. Either the address is not on this");
-  console.error("chain any more, or this build is calling it in a way the node rejects.");
-  process.exit(1);
+const ourAddressWorks = results.some((r) => !r.control && r.ok);
+const controlWorks = results.some((r) => r.control && r.ok);
+
+if (ourAddressWorks) {
+  console.log("The pinned contract is readable. Use the options from the first passing probe.");
+  process.exit(0);
 }
 
-const working = probes.filter((probe) => !failures.some((f) => f.label === probe.label));
-if (failures.length > 0) {
-  console.log("Some read options failed. The app must use one that works:");
-  for (const probe of working) console.log(`  ${probe.label} -> ${JSON.stringify(probe.options)}`);
+if (controlWorks) {
+  console.error("Our address fails every read, while a control contract on the same chain reads");
+  console.error("fine, so the address pinned in lib/config.ts is not on this chain.");
+  console.error("Deploy again (Actions -> On-chain checks) and pin the address that run prints.");
+} else {
+  console.error("Neither our contract nor the control contract can be read, so the problem is in");
+  console.error("the read path or the node, not in our address. Do not re-pin anything yet.");
 }
+
+process.exit(1);
