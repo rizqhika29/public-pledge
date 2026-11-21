@@ -98,6 +98,7 @@ Design notes:
 - **Transaction status.** A two-step flow, "confirm in your wallet" then "validators reach consensus", with success and error notifications. `ACCEPTED` is not treated as success when the contract execution ended in an error.
 - **Networks.** Studionet and Localnet. Bradbury needs SDK v2 and is intentionally not offered.
 - **Fees.** SDK 1.1.8 has no fee estimation (that is a v2 API), so the frontend does not send `fees`. That is part of the v2 migration for networks that charge fees.
+- **Rate limits.** Studionet allows 60 `gen_call` per minute per IP, while one page load asks several questions and the pledge list pages through `get_pledges`. Every read goes through `lib/genlayer/rpc.ts`: a queue that spaces calls ~1.05 s apart, a 5 s cache with in-flight de-duplication (a StrictMode double mount or two components asking the same question cost one call), and backoff only on throttling-shaped errors. The cache is cleared after a write, so the UI never shows pre-transaction state.
 
 ## Deploy the frontend to Vercel
 

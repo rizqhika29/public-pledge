@@ -2,6 +2,7 @@ import { CONTRACT_ADDRESS, HAS_CONTRACT } from "@/lib/config";
 import { LIMITS } from "@/lib/constants";
 import { NoContractError } from "@/lib/errors";
 import { getReadClient } from "@/lib/genlayer/client";
+import { READ_TTL_MS, readKey, rpcRead } from "@/lib/genlayer/rpc";
 import { toBigInt } from "@/lib/format";
 import { parsePage, parsePledge, parseRecord, type AccountRecord, type Pledge } from "@/lib/pledge";
 
@@ -10,9 +11,18 @@ export function requireContract(): `0x${string}` {
   return CONTRACT_ADDRESS as `0x${string}`;
 }
 
-/** Call a view method. Reads go straight to the GenLayer RPC and never open a wallet pop-up. */
+/**
+ * Call a view method. Reads go straight to the GenLayer RPC and never open a
+ * wallet pop-up.
+ *
+ * Routed through the read guard in `lib/genlayer/rpc.ts`: Studionet allows 60
+ * `gen_call` per minute, and one page load asks several questions at once.
+ */
 async function view(functionName: string, args: Array<string | bigint> = []): Promise<unknown> {
-  return getReadClient().readContract({ address: requireContract(), functionName, args });
+  const address = requireContract();
+  return rpcRead(readKey(functionName, args), READ_TTL_MS, () =>
+    getReadClient().readContract({ address, functionName, args }),
+  );
 }
 
 export async function fetchPledgeCount(): Promise<number> {

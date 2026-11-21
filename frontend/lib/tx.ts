@@ -1,6 +1,7 @@
 import { TxFailedError, extractContractReason, contractReasonMessage } from "@/lib/errors";
 import { requireContract } from "@/lib/contract";
 import { getReadClient, getWriteClient } from "@/lib/genlayer/client";
+import { rpcClear } from "@/lib/genlayer/rpc";
 import type { Signer } from "@/lib/genlayer/wallets";
 
 export type TxPhase = "wallet" | "consensus";
@@ -95,6 +96,8 @@ export async function submitWrite({ signer, functionName, args, value = 0n, ctl 
       retries: 120,
     });
     verifyReceipt(receipt, hash);
+    // Every read cached before this point describes the state before it.
+    rpcClear();
   } catch (error) {
     if (error instanceof TxFailedError) throw error;
     throw new TxFailedError(
