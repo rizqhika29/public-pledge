@@ -12,7 +12,8 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "check:contract": "node scripts/check-contract.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.5",

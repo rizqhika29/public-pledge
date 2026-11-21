@@ -57,6 +57,22 @@ jobs:
       - run: npm run build
       - run: npm run typecheck
 
+  contract-live:
+    name: Pinned contract is live
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      # The address is compiled into the bundle, so a dead one is invisible until
+      # someone opens the site. This reads it through the same SDK and chain.
+      - run: npm run check:contract
+
   frontend-e2e:
     name: Frontend (end-to-end)
     runs-on: ubuntu-latest
