@@ -79,10 +79,11 @@ Next.js 16 + Tailwind 4 + `genlayer-js` 1.1.8 (pinned), in `frontend/`.
 
 ```bash
 cd frontend
-cp .env.example .env.local     # set NEXT_PUBLIC_CONTRACT_ADDRESS after deploying
 npm install
-npm run dev
+npm run dev                    # http://localhost:3000
 ```
+
+It works with no configuration: with `NEXT_PUBLIC_CONTRACT_ADDRESS` unset it talks to the Studionet contract the on-chain workflow last deployed (`0x945ebf6cb2109ed732318019b2fc9d1513ab2f54` at the time of writing, recorded in `frontend/lib/config.ts`). Set the variable to override it, which Localnet requires.
 
 Pages: landing (`/`), how it works (`/how-it-works`), pledge list (`/pledges`), pledge detail and consensus result (`/pledges/[id]`), create (`/create`), account and withdrawal (`/account`).
 

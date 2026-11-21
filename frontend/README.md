@@ -4,17 +4,18 @@ Next.js 16 (App Router) + Tailwind 4 + `genlayer-js` 1.1.8, talking to the `Publ
 
 ```bash
 npm install
-cp .env.example .env.local     # then set NEXT_PUBLIC_CONTRACT_ADDRESS
 npm run dev                    # http://localhost:3000
 npm run build && npm run typecheck
 ```
+
+`.env.local` is optional: with no configuration at all the app talks to the contract the on-chain workflow last deployed on Studionet. Copy `.env.example` to `.env.local` only to point it somewhere else.
 
 ## Configuration
 
 | Variable | Default | Meaning |
 |---|---|---|
 | `NEXT_PUBLIC_GENLAYER_NETWORK` | `studionet` | `studionet` or `localnet`. Bradbury needs SDK v2 and is not offered. |
-| `NEXT_PUBLIC_CONTRACT_ADDRESS` | empty | Address of the deployed contract. Without it the app renders, shows a setup notice, and disables writes. |
+| `NEXT_PUBLIC_CONTRACT_ADDRESS` | the Studionet deployment in `lib/config.ts` | Address of the contract to use. On `localnet` there is no fallback, so it must be set to your own deployment. |
 
 Both are read at build time, so a change needs a restart.
 
