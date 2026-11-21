@@ -93,15 +93,37 @@ function rawMessage(error: unknown): string {
   return String(error);
 }
 
-function codeOf(error: unknown): number | undefined {
-  let current: unknown = error;
-  for (let depth = 0; depth < 4 && current && typeof current === "object"; depth++) {
-    const code = (current as { code?: unknown }).code;
-    if (typeof code === "number") return code;
-    if (typeof code === "string" && /^-?\d+$/.test(code)) return Number(code);
-    current = (current as { cause?: unknown }).cause;
-  }
-  return undefined;
+/**
+ * Collect every numeric code inside an error, however deeply a wallet nested it.
+ *
+ * Wallets do not agree on where the code lives: MetaMask puts a rejected request
+ * at `error.code`, but wraps it as `error.data.originalError.code` when the
+ * request came through a provider proxy, and some wrap it twice. Reading only
+ * the top level turns "you rejected the request" into a generic error, so we
+ * walk the common containers instead.
+ */
+export function errorCodes(error: unknown): number[] {
+  const codes: number[] = [];
+  const seen = new WeakSet<object>();
+
+  const walk = (value: unknown, depth: number): void => {
+    if (!value || typeof value !== "object" || depth > 6) return;
+    if (seen.has(value as object)) return;
+    seen.add(value as object);
+
+    const record = value as Record<string, unknown>;
+    const code = record.code;
+    if (typeof code === "number" && Number.isFinite(code)) codes.push(code);
+    else if (typeof code === "string" && /^-?\d+$/.test(code)) codes.push(Number(code));
+
+    for (const key of ["data", "cause", "originalError", "error", "info"]) {
+      const nested = record[key];
+      if (nested && typeof nested === "object") walk(nested, depth + 1);
+    }
+  };
+
+  walk(error, 0);
+  return codes;
 }
 
 export function describeError(error: unknown): UserFacingError {
@@ -127,18 +149,32 @@ export function describeError(error: unknown): UserFacingError {
     return { kind: error.kind, title, message: error.message };
   }
 
-  const code = codeOf(error);
+  const codes = errorCodes(error);
   const text = rawMessage(error);
   const lower = text.toLowerCase();
 
-  if (code === 4001 || code === 5000 || /user (rejected|denied|cancel)/.test(lower) || lower.includes("rejected the request")) {
+  if (codes.some((c) => c === 4001 || c === 5000) || /user (rejected|denied|cancel)/.test(lower) || lower.includes("rejected the request")) {
     return { kind: "rejected", title: "Request cancelled", message: "You dismissed the request in your wallet. Nothing was sent." };
   }
-  if (code === -32002 || lower.includes("already pending") || lower.includes("already processing")) {
+  if (codes.some((c) => c === -32002) || lower.includes("already pending") || lower.includes("already processing")) {
     return {
       kind: "busy",
       title: "Wallet request already open",
       message: "Your wallet already has a pending request. Open the wallet and approve or reject it first.",
+    };
+  }
+  if (codes.some((c) => c === 4900 || c === 4901) || lower.includes("wallet is disconnected")) {
+    return {
+      kind: "wallet",
+      title: "Wallet disconnected",
+      message: "Your wallet is no longer reachable. Open the wallet extension, then reconnect.",
+    };
+  }
+  if (codes.some((c) => c === 4200 || c === -32601) || lower.includes("does not support") || lower.includes("unsupported method")) {
+    return {
+      kind: "wallet",
+      title: "Wallet does not support this",
+      message: "This wallet cannot sign this request. Try another wallet, such as MetaMask.",
     };
   }
   if (lower.includes("insufficient funds") || lower.includes("exceeds balance") || lower.includes("insufficient balance")) {

@@ -19,7 +19,7 @@ import {
   type Signer,
 } from "@/lib/genlayer/wallets";
 import { NETWORK_KEY, NETWORK_LABEL } from "@/lib/config";
-import { NotConnectedError, WalletBusyError, WrongNetworkError } from "@/lib/errors";
+import { NotConnectedError, WalletBusyError, WrongNetworkError, errorCodes } from "@/lib/errors";
 
 const LS_WALLET = "pp.wallet";
 const LS_OFF = "pp.wallet.off";
@@ -70,13 +70,11 @@ async function readChainId(provider: Eip1193Provider): Promise<number | null> {
   }
 }
 
-function errorCode(error: unknown): number | undefined {
-  const code = (error as { code?: unknown } | null)?.code;
-  return typeof code === "number" ? code : undefined;
-}
-
+/** True when the wallet does not know the chain yet (EIP-3326 / EIP-3085). */
 function isUnknownChain(error: unknown): boolean {
-  if (errorCode(error) === 4902) return true;
+  // The 4902 code is often nested inside `data.originalError`, so read every
+  // code the wallet wrapped, not just the top-level one.
+  if (errorCodes(error).includes(4902)) return true;
   const message = String((error as { message?: unknown } | null)?.message ?? "").toLowerCase();
   return message.includes("unrecognized chain") || message.includes("not been added");
 }
@@ -149,29 +147,42 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
     const wallet = savedRdns && !disconnectedByUser ? wallets.find((w) => w.info.rdns === savedRdns) : undefined;
 
-    if (wallet) {
-      restoredRef.current = true;
-      void (async () => {
-        try {
-          const accounts = (await wallet.provider.request({ method: "eth_accounts" })) as unknown;
-          const list = Array.isArray(accounts) ? (accounts as string[]) : [];
-          if (list.length > 0) {
-            const chainId = await readChainId(wallet.provider);
-            setSession({ wallet, address: list[0], chainId });
-          }
-        } catch {
-          // stay disconnected
-        } finally {
-          setInitializing(false);
-        }
-      })();
-      return;
+    // Nothing to restore: finish as soon as discovery has been declared.
+    if (!wallet) {
+      if (!discovered) return;
+
+      if (!savedRdns || disconnectedByUser) {
+        restoredRef.current = true;
+        setInitializing(false);
+        return;
+      }
+
+      // A wallet was saved but has not announced itself yet. Some extensions
+      // answer eip6963:requestProvider a moment after discovery is declared, so
+      // wait a little longer instead of silently dropping the session.
+      const giveUp = window.setTimeout(() => {
+        if (restoredRef.current) return;
+        restoredRef.current = true;
+        setInitializing(false);
+      }, 2500);
+      return () => window.clearTimeout(giveUp);
     }
 
-    if (discovered) {
-      restoredRef.current = true;
-      setInitializing(false);
-    }
+    restoredRef.current = true;
+    void (async () => {
+      try {
+        const accounts = (await wallet.provider.request({ method: "eth_accounts" })) as unknown;
+        const list = Array.isArray(accounts) ? (accounts as string[]) : [];
+        if (list.length > 0) {
+          const chainId = await readChainId(wallet.provider);
+          setSession({ wallet, address: list[0], chainId });
+        }
+      } catch {
+        // stay disconnected
+      } finally {
+        setInitializing(false);
+      }
+    })();
   }, [wallets, discovered]);
 
   // React to account / network changes on the active wallet only.
